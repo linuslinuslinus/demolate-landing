@@ -46,7 +46,8 @@
 
     .logo-wrap {
       width: min(58vw, 58vh);
-      height: auto;
+      aspect-ratio: 1003.09 / 470.89;
+      position: relative;
       transform-style: preserve-3d;
       transform: rotateY(var(--rot));
       will-change: transform;
@@ -55,8 +56,10 @@
     }
 
     .logo {
+      position: absolute;
+      inset: 0;
       width: 100%;
-      height: auto;
+      height: 100%;
       fill: #fff;
       display: block;
       backface-visibility: visible;
@@ -144,6 +147,28 @@
     (function () {
       const root = document.documentElement;
       const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      // Build extrusion: clone the logo N times along the Z axis to give it visible thickness.
+      // 30 stacked layers separated by 0.18vmin = ~5.4vmin total depth.
+      // Together they read as a solid extruded 3D object when rotated.
+      const wrap = document.querySelector('.logo-wrap');
+      const original = wrap.querySelector('.logo');
+      const LAYERS = 30;
+      const SPACING_VMIN = 0.18;
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < LAYERS; i++) {
+        const z = (i - (LAYERS - 1) / 2) * SPACING_VMIN;
+        let layer;
+        if (i === 0) {
+          layer = original;
+        } else {
+          layer = original.cloneNode(true);
+          frag.appendChild(layer);
+        }
+        layer.style.transform = `translateZ(${z}vmin)`;
+      }
+      wrap.appendChild(frag);
+
       if (prefersReducedMotion) return;
 
       const totalRotation = 720; // 2 full spins across the page scroll
