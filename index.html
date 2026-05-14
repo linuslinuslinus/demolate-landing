@@ -16,10 +16,6 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    :root {
-      --rot: 0deg;
-    }
-
     html, body {
       width: 100%;
       background: #000;
@@ -30,45 +26,22 @@
     }
 
     body {
-      /* 400vh of scroll = 2 full rotations of the logo */
+      /* 400vh of scroll = 2 full rotations */
       height: 400vh;
     }
 
-    .stage {
+    canvas#stage {
       position: fixed;
       inset: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      perspective: 1400px;
-      perspective-origin: center center;
-    }
-
-    .logo-wrap {
-      width: min(58vw, 58vh);
-      aspect-ratio: 1003.09 / 470.89;
-      position: relative;
-      transform-style: preserve-3d;
-      transform: rotateY(var(--rot));
-      will-change: transform;
-      opacity: 0;
-      animation: enter 2.2s cubic-bezier(0.16, 1, 0.3, 1) 0.3s forwards;
-    }
-
-    .logo {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      fill: #fff;
+      width: 100vw;
+      height: 100vh;
       display: block;
-      backface-visibility: visible;
+      opacity: 0;
+      animation: enter 1.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s forwards;
     }
 
     @keyframes enter {
-      to {
-        opacity: 1;
-      }
+      to { opacity: 1; }
     }
 
     .meta {
@@ -84,32 +57,18 @@
       z-index: 10;
     }
 
-    .meta--left {
-      left: 1.5rem;
-    }
-
+    .meta--left { left: 1.5rem; }
     .meta--right {
       right: 1.5rem;
       display: flex;
       gap: 1rem;
     }
+    .meta a { color: #fff; text-decoration: none; }
+    .meta a:hover { background: #fff; color: #000; }
 
-    .meta a {
-      color: #fff;
-      text-decoration: none;
-    }
-
-    .meta a:hover {
-      background: #fff;
-      color: #000;
-    }
-
-    @keyframes fade-in {
-      to { opacity: 1; }
-    }
+    @keyframes fade-in { to { opacity: 1; } }
 
     @media (max-width: 640px) {
-      .logo-wrap { width: 78vw; }
       .meta { font-size: 0.65rem; bottom: 1rem; }
       .meta--left { left: 1rem; }
       .meta--right { right: 1rem; gap: 0.75rem; }
@@ -117,24 +76,23 @@
 
     @media (prefers-reduced-motion: reduce) {
       body { height: 100vh; }
-      .logo-wrap {
-        animation: none;
-        opacity: 1;
-        transform: none;
-      }
-      .meta { animation: none; opacity: 1; }
+    }
+
+    noscript .fallback-logo {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    noscript .fallback-logo img {
+      width: min(58vw, 58vh);
+      fill: #fff;
     }
   </style>
 </head>
 <body>
-  <div class="stage">
-    <div class="logo-wrap">
-      <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1003.09 470.89" aria-label="Demolate Records logo" role="img">
-        <path d="m459.39,47.59C432.21,19.64,394.56,1.93,352.73.76c-2.86-.05-5.78.58-8.4,1.75L11.79,150.46c-7.13,3.2-11.79,10.34-11.79,18.2v134.37c0,7.81,4.66,14.94,11.79,18.14l332.54,147.96c2.62,1.21,5.54,1.84,8.4,1.75,83.61-2.33,150.62-70.8,150.62-154.95v-160.18c0-42.07-16.74-80.26-43.96-108.16Zm-111.03,210.31c0,32.07-25.96,58.03-58.03,58.03h-115.45c-10.96,0-19.84-8.92-19.84-19.89v-120.44c0-10.97,8.88-19.85,19.84-19.85h116.71c31.34,0,56.77,25.38,56.77,56.73v45.42Z"/>
-        <path d="m998.85,328.79l-311.97,138.79c-3.69,1.65-7.67,2.52-11.75,2.52h-6.69c-78.52,0-142.18-63.67-142.18-142.18v-176.54C526.26,70.1,590.21,3.82,670.57.03c4.47-.19,8.98.63,13.06,2.43l314.88,138.73c7.08,3.11,4.85,13.69-2.91,13.69h-272.04c-23.34,0-42.26,18.92-42.26,42.31v75.6c0,23.35,18.92,42.27,42.26,42.27h272.38c7.71,0,9.94,10.58,2.91,13.73Z"/>
-      </svg>
-    </div>
-  </div>
+  <canvas id="stage"></canvas>
 
   <div class="meta meta--left">DMLT001 · 05.06.2026</div>
   <div class="meta meta--right">
@@ -143,54 +101,159 @@
     <a href="#" aria-label="SoundCloud">SC</a>
   </div>
 
-  <script>
-    (function () {
-      const root = document.documentElement;
-      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  <noscript>
+    <div class="fallback-logo">
+      <img src="assets/demolate-logo.svg" alt="Demolate Records logo" style="width: min(58vw, 58vh); filter: invert(1);">
+    </div>
+  </noscript>
 
-      // Build extrusion: clone the logo N times along the Z axis to give it visible thickness.
-      // 30 stacked layers separated by 0.18vmin = ~5.4vmin total depth.
-      // Together they read as a solid extruded 3D object when rotated.
-      const wrap = document.querySelector('.logo-wrap');
-      const original = wrap.querySelector('.logo');
-      const LAYERS = 80;
-      const SPACING_VMIN = 0.5;
-      const frag = document.createDocumentFragment();
-      for (let i = 0; i < LAYERS; i++) {
-        const z = (i - (LAYERS - 1) / 2) * SPACING_VMIN;
-        let layer;
-        if (i === 0) {
-          layer = original;
-        } else {
-          layer = original.cloneNode(true);
-          frag.appendChild(layer);
-        }
-        layer.style.transform = `translateZ(${z}vmin)`;
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
       }
-      wrap.appendChild(frag);
+    }
+  </script>
 
-      if (prefersReducedMotion) return;
+  <script type="module">
+    import * as THREE from 'three';
+    import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
 
-      const totalRotation = 720; // 2 full spins across the page scroll
-      let ticking = false;
+    const canvas = document.getElementById('stage');
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: true,
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000000, 1);
 
-      function update() {
-        const maxScroll = document.body.scrollHeight - window.innerHeight;
-        const progress = maxScroll > 0 ? window.scrollY / maxScroll : 0;
-        root.style.setProperty('--rot', (progress * totalRotation) + 'deg');
-        ticking = false;
-      }
+    const scene = new THREE.Scene();
 
-      window.addEventListener('scroll', () => {
-        if (!ticking) {
-          window.requestAnimationFrame(update);
-          ticking = true;
-        }
-      }, { passive: true });
+    // Perspective camera. We push the camera back far enough that the
+    // logo fills ~58% of the smaller viewport dimension.
+    const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 5000);
+    camera.position.set(0, 0, 1200);
 
-      window.addEventListener('resize', update, { passive: true });
-      update();
-    })();
+    // Lighting — needed for MeshStandardMaterial to show the extruded side faces.
+    // Three lights total:
+    //  - Soft ambient so the front is fully readable
+    //  - Key directional from upper right (creates a bright edge)
+    //  - Fill directional from lower left (rims the opposite edge so the silhouette
+    //    never goes black when rotating)
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    keyLight.position.set(400, 600, 800);
+    scene.add(keyLight);
+
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.55);
+    fillLight.position.set(-500, -300, 400);
+    scene.add(fillLight);
+
+    // Logo SVG embedded inline so SVGLoader can parse without an extra fetch.
+    const svgString = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1003.09 470.89">
+<path d="m459.39,47.59C432.21,19.64,394.56,1.93,352.73.76c-2.86-.05-5.78.58-8.4,1.75L11.79,150.46c-7.13,3.2-11.79,10.34-11.79,18.2v134.37c0,7.81,4.66,14.94,11.79,18.14l332.54,147.96c2.62,1.21,5.54,1.84,8.4,1.75,83.61-2.33,150.62-70.8,150.62-154.95v-160.18c0-42.07-16.74-80.26-43.96-108.16Zm-111.03,210.31c0,32.07-25.96,58.03-58.03,58.03h-115.45c-10.96,0-19.84-8.92-19.84-19.89v-120.44c0-10.97,8.88-19.85,19.84-19.85h116.71c31.34,0,56.77,25.38,56.77,56.73v45.42Z"/>
+<path d="m998.85,328.79l-311.97,138.79c-3.69,1.65-7.67,2.52-11.75,2.52h-6.69c-78.52,0-142.18-63.67-142.18-142.18v-176.54C526.26,70.1,590.21,3.82,670.57.03c4.47-.19,8.98.63,13.06,2.43l314.88,138.73c7.08,3.11,4.85,13.69-2.91,13.69h-272.04c-23.34,0-42.26,18.92-42.26,42.31v75.6c0,23.35,18.92,42.27,42.26,42.27h272.38c7.71,0,9.94,10.58,2.91,13.73Z"/>
+</svg>`;
+
+    const loader = new SVGLoader();
+    const data = loader.parse(svgString);
+
+    // Group to hold all extruded path meshes.
+    // Anchor it slightly above scene origin to compensate for SVG y-down coords.
+    const logoGroup = new THREE.Group();
+
+    // Standard material — slight roughness reads as plastic/vinyl, fully white.
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.45,
+      metalness: 0.05,
+      side: THREE.DoubleSide,
+    });
+
+    // Extrude each path into a real 3D mesh with depth.
+    // Depth = 110 (relative to SVG viewBox 1003 wide). Bevel adds subtle softness
+    // to the edges, which catches light nicely on rotation.
+    const extrudeSettings = {
+      depth: 110,
+      bevelEnabled: true,
+      bevelSegments: 2,
+      bevelSize: 2,
+      bevelThickness: 2,
+      curveSegments: 24,
+    };
+
+    data.paths.forEach((path) => {
+      const shapes = SVGLoader.createShapes(path);
+      shapes.forEach((shape) => {
+        const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        // SVG uses Y-down, Three.js uses Y-up. Flip.
+        geometry.scale(1, -1, 1);
+        const mesh = new THREE.Mesh(geometry, material);
+        logoGroup.add(mesh);
+      });
+    });
+
+    // Compute group bounding box and center it on origin.
+    const bbox = new THREE.Box3().setFromObject(logoGroup);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+    logoGroup.position.sub(center);
+
+    // Scale the group so the logo width fills ~58% of the camera view.
+    // The bbox width in SVG units is ~1003. The visible scene width at camera
+    // distance is derived from FOV. We'll set scale in resize() to keep it
+    // responsive.
+    scene.add(logoGroup);
+
+    // Scroll-driven rotation
+    const TOTAL_ROTATION = Math.PI * 4; // 2 full revolutions across the scroll
+    let targetRot = 0;
+    let currentRot = 0;
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    function updateScroll() {
+      const maxScroll = document.body.scrollHeight - window.innerHeight;
+      const progress = maxScroll > 0 ? window.scrollY / maxScroll : 0;
+      targetRot = progress * TOTAL_ROTATION;
+    }
+
+    window.addEventListener('scroll', updateScroll, { passive: true });
+
+    function resize() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+
+      // Fit logo into ~58% of the smaller viewport dimension.
+      // At camera.position.z and FOV, the visible height at z=0 is:
+      //   visibleHeight = 2 * tan(fov/2) * cameraZ
+      const fovRad = camera.fov * Math.PI / 180;
+      const visibleHeight = 2 * Math.tan(fovRad / 2) * camera.position.z;
+      const visibleWidth = visibleHeight * camera.aspect;
+      const target = Math.min(visibleWidth, visibleHeight) * 0.58;
+      const bboxSize = bbox.getSize(new THREE.Vector3());
+      // Use whichever dimension limits the fit
+      const scale = Math.min(target / bboxSize.x, target / bboxSize.y);
+      logoGroup.scale.setScalar(scale);
+    }
+    window.addEventListener('resize', resize, { passive: true });
+    resize();
+    updateScroll();
+
+    function animate() {
+      // Smooth-follow the target rotation (light lerp so scroll feels physical)
+      currentRot += (targetRot - currentRot) * 0.12;
+      logoGroup.rotation.y = prefersReducedMotion ? 0 : currentRot;
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+    animate();
   </script>
 </body>
 </html>
