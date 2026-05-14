@@ -16,46 +16,56 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
+    :root {
+      --rot: 0deg;
+    }
+
     html, body {
       width: 100%;
-      height: 100%;
       background: #000;
       color: #fff;
       font-family: 'Archivo Black', system-ui, sans-serif;
-      overflow: hidden;
       -webkit-font-smoothing: antialiased;
+      overscroll-behavior: none;
     }
 
-    main {
-      width: 100vw;
-      height: 100vh;
+    body {
+      /* 400vh of scroll = 2 full rotations of the logo */
+      height: 400vh;
+    }
+
+    .stage {
+      position: fixed;
+      inset: 0;
       display: flex;
       align-items: center;
       justify-content: center;
-      position: relative;
+      perspective: 1400px;
+      perspective-origin: center center;
+    }
+
+    .logo-wrap {
+      width: min(58vw, 58vh);
+      height: auto;
+      transform-style: preserve-3d;
+      transform: rotateY(var(--rot));
+      will-change: transform;
+      opacity: 0;
+      animation: enter 2.2s cubic-bezier(0.16, 1, 0.3, 1) 0.3s forwards;
     }
 
     .logo {
-      width: min(58vw, 58vh);
+      width: 100%;
       height: auto;
       fill: #fff;
-      opacity: 0;
-      transform: scale(0.96);
-      animation:
-        enter 2.2s cubic-bezier(0.16, 1, 0.3, 1) 0.3s forwards,
-        breathe 9s ease-in-out 2.6s infinite alternate;
+      display: block;
+      backface-visibility: visible;
     }
 
     @keyframes enter {
       to {
         opacity: 1;
-        transform: scale(1);
       }
-    }
-
-    @keyframes breathe {
-      from { transform: scale(1); }
-      to   { transform: scale(1.014); }
     }
 
     .meta {
@@ -68,6 +78,7 @@
       opacity: 0;
       animation: fade-in 1.5s ease-out 1.5s forwards;
       font-family: 'Archivo Black', monospace;
+      z-index: 10;
     }
 
     .meta--left {
@@ -86,7 +97,6 @@
     }
 
     .meta a:hover {
-      color: #fff;
       background: #fff;
       color: #000;
     }
@@ -96,36 +106,66 @@
     }
 
     @media (max-width: 640px) {
-      .logo { width: 78vw; }
+      .logo-wrap { width: 78vw; }
       .meta { font-size: 0.65rem; bottom: 1rem; }
       .meta--left { left: 1rem; }
       .meta--right { right: 1rem; gap: 0.75rem; }
     }
 
-    /* Respect users who prefer no motion */
     @media (prefers-reduced-motion: reduce) {
-      .logo,
-      .meta {
+      body { height: 100vh; }
+      .logo-wrap {
         animation: none;
         opacity: 1;
         transform: none;
       }
+      .meta { animation: none; opacity: 1; }
     }
   </style>
 </head>
 <body>
-  <main>
-    <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1003.09 470.89" aria-label="Demolate Records logo" role="img">
-      <path d="m459.39,47.59C432.21,19.64,394.56,1.93,352.73.76c-2.86-.05-5.78.58-8.4,1.75L11.79,150.46c-7.13,3.2-11.79,10.34-11.79,18.2v134.37c0,7.81,4.66,14.94,11.79,18.14l332.54,147.96c2.62,1.21,5.54,1.84,8.4,1.75,83.61-2.33,150.62-70.8,150.62-154.95v-160.18c0-42.07-16.74-80.26-43.96-108.16Zm-111.03,210.31c0,32.07-25.96,58.03-58.03,58.03h-115.45c-10.96,0-19.84-8.92-19.84-19.89v-120.44c0-10.97,8.88-19.85,19.84-19.85h116.71c31.34,0,56.77,25.38,56.77,56.73v45.42Z"/>
-      <path d="m998.85,328.79l-311.97,138.79c-3.69,1.65-7.67,2.52-11.75,2.52h-6.69c-78.52,0-142.18-63.67-142.18-142.18v-176.54C526.26,70.1,590.21,3.82,670.57.03c4.47-.19,8.98.63,13.06,2.43l314.88,138.73c7.08,3.11,4.85,13.69-2.91,13.69h-272.04c-23.34,0-42.26,18.92-42.26,42.31v75.6c0,23.35,18.92,42.27,42.26,42.27h272.38c7.71,0,9.94,10.58,2.91,13.73Z"/>
-    </svg>
-
-    <div class="meta meta--left">DMLT001 · 05.06.2026</div>
-    <div class="meta meta--right">
-      <a href="#" aria-label="Instagram">IG</a>
-      <a href="#" aria-label="Bandcamp">BC</a>
-      <a href="#" aria-label="SoundCloud">SC</a>
+  <div class="stage">
+    <div class="logo-wrap">
+      <svg class="logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1003.09 470.89" aria-label="Demolate Records logo" role="img">
+        <path d="m459.39,47.59C432.21,19.64,394.56,1.93,352.73.76c-2.86-.05-5.78.58-8.4,1.75L11.79,150.46c-7.13,3.2-11.79,10.34-11.79,18.2v134.37c0,7.81,4.66,14.94,11.79,18.14l332.54,147.96c2.62,1.21,5.54,1.84,8.4,1.75,83.61-2.33,150.62-70.8,150.62-154.95v-160.18c0-42.07-16.74-80.26-43.96-108.16Zm-111.03,210.31c0,32.07-25.96,58.03-58.03,58.03h-115.45c-10.96,0-19.84-8.92-19.84-19.89v-120.44c0-10.97,8.88-19.85,19.84-19.85h116.71c31.34,0,56.77,25.38,56.77,56.73v45.42Z"/>
+        <path d="m998.85,328.79l-311.97,138.79c-3.69,1.65-7.67,2.52-11.75,2.52h-6.69c-78.52,0-142.18-63.67-142.18-142.18v-176.54C526.26,70.1,590.21,3.82,670.57.03c4.47-.19,8.98.63,13.06,2.43l314.88,138.73c7.08,3.11,4.85,13.69-2.91,13.69h-272.04c-23.34,0-42.26,18.92-42.26,42.31v75.6c0,23.35,18.92,42.27,42.26,42.27h272.38c7.71,0,9.94,10.58,2.91,13.73Z"/>
+      </svg>
     </div>
-  </main>
+  </div>
+
+  <div class="meta meta--left">DMLT001 · 05.06.2026</div>
+  <div class="meta meta--right">
+    <a href="#" aria-label="Instagram">IG</a>
+    <a href="#" aria-label="Bandcamp">BC</a>
+    <a href="#" aria-label="SoundCloud">SC</a>
+  </div>
+
+  <script>
+    (function () {
+      const root = document.documentElement;
+      const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (prefersReducedMotion) return;
+
+      const totalRotation = 720; // 2 full spins across the page scroll
+      let ticking = false;
+
+      function update() {
+        const maxScroll = document.body.scrollHeight - window.innerHeight;
+        const progress = maxScroll > 0 ? window.scrollY / maxScroll : 0;
+        root.style.setProperty('--rot', (progress * totalRotation) + 'deg');
+        ticking = false;
+      }
+
+      window.addEventListener('scroll', () => {
+        if (!ticking) {
+          window.requestAnimationFrame(update);
+          ticking = true;
+        }
+      }, { passive: true });
+
+      window.addEventListener('resize', update, { passive: true });
+      update();
+    })();
+  </script>
 </body>
 </html>
