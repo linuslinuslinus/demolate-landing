@@ -153,8 +153,8 @@
       // Together they read as a solid extruded 3D object when rotated.
       const wrap = document.querySelector('.logo-wrap');
       const original = wrap.querySelector('.logo');
-      const LAYERS = 30;
-      const SPACING_VMIN = 0.18;
+      const LAYERS = 80;
+      const SPACING_VMIN = 0.5;
       const frag = document.createDocumentFragment();
       for (let i = 0; i < LAYERS; i++) {
         const z = (i - (LAYERS - 1) / 2) * SPACING_VMIN;
