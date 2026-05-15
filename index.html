@@ -225,6 +225,7 @@
     //    appearing as solid color, no more visible tile-repeat grid on edges
     const LOGO_W = 1003.09, LOGO_H = 470.89;
     const customUVGenerator = {
+      // Front + back: normalized 0..1 across the logo bbox.
       generateTopUV(geometry, vertices, indexA, indexB, indexC) {
         const ax = vertices[indexA * 3], ay = vertices[indexA * 3 + 1];
         const bx = vertices[indexB * 3], by = vertices[indexB * 3 + 1];
@@ -235,26 +236,33 @@
           new THREE.Vector2(cx / LOGO_W, 1 - cy / LOGO_H),
         ];
       },
-      generateSideWallUV() {
-        // All side-wall verts → same UV point. Side walls render as flat color.
+      // Side walls: sample the texture at the SAME 2D point as the corresponding
+      // front-face vertex (using x,y, ignoring z). This means the texture
+      // continues seamlessly from the front face onto the side — each side
+      // pixel samples whatever the front face has directly above it on the
+      // texture. No tile repeats, no seams, no single-color sides.
+      generateSideWallUV(geometry, vertices, indexA, indexB, indexC, indexD) {
         return [
-          new THREE.Vector2(0.5, 0.5),
-          new THREE.Vector2(0.5, 0.5),
-          new THREE.Vector2(0.5, 0.5),
-          new THREE.Vector2(0.5, 0.5),
+          new THREE.Vector2(vertices[indexA * 3] / LOGO_W, 1 - vertices[indexA * 3 + 1] / LOGO_H),
+          new THREE.Vector2(vertices[indexB * 3] / LOGO_W, 1 - vertices[indexB * 3 + 1] / LOGO_H),
+          new THREE.Vector2(vertices[indexC * 3] / LOGO_W, 1 - vertices[indexC * 3 + 1] / LOGO_H),
+          new THREE.Vector2(vertices[indexD * 3] / LOGO_W, 1 - vertices[indexD * 3 + 1] / LOGO_H),
         ];
       },
     };
 
-    // Softer bevel — bigger size + more segments creates a chamfered edge that
-    // catches light like a real machined part instead of a CGI box.
+    // Softer bevel + many curve segments. With only 28 curveSegments the
+    // logo's circular shapes (D bowl, C bowl, the curve at the bottom) were
+    // polygonal — and even with vertex-normal averaging, polygon edges
+    // produce subtle shading bands visible along the side walls. Bumping
+    // to 96 segments makes the curves read as truly smooth.
     const extrudeSettings = {
       depth: 110,
       bevelEnabled: true,
-      bevelSegments: 6,
+      bevelSegments: 10,
       bevelSize: 5,
       bevelThickness: 5,
-      curveSegments: 28,
+      curveSegments: 96,
       UVGenerator: customUVGenerator,
     };
 
