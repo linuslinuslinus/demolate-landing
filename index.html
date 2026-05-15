@@ -174,26 +174,32 @@
     const aoTex = loadPhTex('ao', THREE.NoColorSpace);
     // intentionally NO diffuse — we want flat gray, not painted blue
 
-    // ExtrudeGeometry UVs are in shape coords (~0..1003, not normalized).
-    // 1.0 tile across the logo width hides texture seams behind the edges.
-    const TILES = 1.0;
-    const REPEAT_X = TILES / 1003;
-    const REPEAT_Y = TILES / 1003;
+    // Custom UVGenerator (defined below) makes the front+back faces use
+    // NORMALIZED UVs (0..1) instead of shape coords. So texture.repeat = 1.0
+    // gives exactly one tile across the logo. Side walls get a single-point
+    // UV — they sample one texture pixel, appearing as solid color (no more
+    // visible repeat-grid bands on the extrusion sides).
     [normalTex, roughnessTex, aoTex].forEach(t => {
-      t.repeat.set(REPEAT_X, REPEAT_Y);
+      t.repeat.set(1, 1);
+      t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
     });
 
     // Clean aged steel — flat gray with the texture's scratch/scuff character.
+    // alphaMap + alphaTest are used by the crack animation to literally cut
+    // pixels out of the logo (so the logo appears to split apart in 3D).
     const material = new THREE.MeshPhysicalMaterial({
-      color: 0x9aa0a4,            // neutral steel gray
+      color: 0x9aa0a4,
       metalness: 0.95,
-      roughness: 1.0,              // multiplied by roughnessMap
+      roughness: 1.0,
       roughnessMap: roughnessTex,
       normalMap: normalTex,
       normalScale: new THREE.Vector2(0.6, 0.6),
       aoMap: aoTex,
       aoMapIntensity: 0.9,
       envMapIntensity: 1.2,
+      alphaMap: null,            // set during crack lifecycle
+      alphaTest: 0,              // animated from 0 → ~0.4 to grow the crack
+      transparent: false,
     });
 
     // Three-level group hierarchy:
@@ -215,6 +221,34 @@
 <path d="m998.85,328.79l-311.97,138.79c-3.69,1.65-7.67,2.52-11.75,2.52h-6.69c-78.52,0-142.18-63.67-142.18-142.18v-176.54C526.26,70.1,590.21,3.82,670.57.03c4.47-.19,8.98.63,13.06,2.43l314.88,138.73c7.08,3.11,4.85,13.69-2.91,13.69h-272.04c-23.34,0-42.26,18.92-42.26,42.31v75.6c0,23.35,18.92,42.27,42.26,42.27h272.38c7.71,0,9.94,10.58,2.91,13.73Z"/>
 </svg>`);
 
+    // Custom UV generator:
+    //  - Front + back faces: normalize UVs to 0..1 over the logo bbox (1003×471)
+    //    so texture.repeat = 1 means "one tile across the whole logo"
+    //  - Side walls: single point UV (0.5, 0.5) — samples one texture pixel,
+    //    appearing as solid color, no more visible tile-repeat grid on edges
+    const LOGO_W = 1003.09, LOGO_H = 470.89;
+    const customUVGenerator = {
+      generateTopUV(geometry, vertices, indexA, indexB, indexC) {
+        const ax = vertices[indexA * 3], ay = vertices[indexA * 3 + 1];
+        const bx = vertices[indexB * 3], by = vertices[indexB * 3 + 1];
+        const cx = vertices[indexC * 3], cy = vertices[indexC * 3 + 1];
+        return [
+          new THREE.Vector2(ax / LOGO_W, 1 - ay / LOGO_H),
+          new THREE.Vector2(bx / LOGO_W, 1 - by / LOGO_H),
+          new THREE.Vector2(cx / LOGO_W, 1 - cy / LOGO_H),
+        ];
+      },
+      generateSideWallUV() {
+        // All side-wall verts → same UV point. Side walls render as flat color.
+        return [
+          new THREE.Vector2(0.5, 0.5),
+          new THREE.Vector2(0.5, 0.5),
+          new THREE.Vector2(0.5, 0.5),
+          new THREE.Vector2(0.5, 0.5),
+        ];
+      },
+    };
+
     // Softer bevel — bigger size + more segments creates a chamfered edge that
     // catches light like a real machined part instead of a CGI box.
     const extrudeSettings = {
@@ -224,6 +258,7 @@
       bevelSize: 5,
       bevelThickness: 5,
       curveSegments: 28,
+      UVGenerator: customUVGenerator,
     };
 
     data.paths.forEach((path) => {
@@ -280,12 +315,14 @@
       if (e.key === 'm' || e.key === 'M') cyclePreset();
     });
 
-    // -- Crack animation --
-    // Procedurally drawn jagged crack with branches (looks like real glass/metal
-    // fracture, not a 2D line). Drawn into a canvas using recursive midpoint
-    // displacement, used as alphaMap on a transparent plane parented to the
-    // logo. Visible 5s at full opacity, then fades over 2s. New crack texture
-    // generated each cycle so it's never the same shape twice.
+    // -- Crack animation (true 3D split) --
+    // Approach: use a procedurally drawn jagged crack canvas as the LOGO
+    // material's alphaMap, animating alphaTest from 0 → ~0.45 → 0 over the
+    // cycle. When alphaTest rises, pixels darker than the threshold get
+    // discarded from the logo — actual holes in the geometry. The crack
+    // shape is in shape-bbox coords (matches our custom UVGenerator), so
+    // it appears correctly placed on the logo. Side walls sample a single
+    // pixel (always solid white in the canvas) so they stay intact.
     const CRACK_TEX_W = 1024;
     const CRACK_TEX_H = 512;
 
@@ -294,32 +331,30 @@
       c.width = CRACK_TEX_W;
       c.height = CRACK_TEX_H;
       const ctx = c.getContext('2d');
-      // Black background so the alphaMap shows the crack as opaque
-      ctx.fillStyle = '#000';
+      // WHITE background = solid logo (alphaTest passes)
+      ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, CRACK_TEX_W, CRACK_TEX_H);
 
       ctx.lineCap = 'round';
-      ctx.strokeStyle = '#fff';   // white = visible in alphaMap
+      ctx.strokeStyle = '#000';   // BLACK = punched-out hole
 
       function drawJaggedLine(x0, y0, x1, y1, width, depth, branchProb) {
         if (depth <= 0 || (Math.abs(x1-x0) < 6 && Math.abs(y1-y0) < 6)) {
-          ctx.lineWidth = Math.max(0.5, width);
+          ctx.lineWidth = Math.max(1.5, width);
           ctx.beginPath();
           ctx.moveTo(x0, y0);
           ctx.lineTo(x1, y1);
           ctx.stroke();
           return;
         }
-        // Midpoint displacement perpendicular to segment direction
         const dx = x1 - x0, dy = y1 - y0;
         const len = Math.hypot(dx, dy);
-        const nx = -dy / len, ny = dx / len;   // unit normal
+        const nx = -dy / len, ny = dx / len;
         const offset = (Math.random() - 0.5) * len * 0.18;
         const mx = (x0 + x1) / 2 + nx * offset;
         const my = (y0 + y1) / 2 + ny * offset;
         drawJaggedLine(x0, y0, mx, my, width, depth - 1, branchProb);
         drawJaggedLine(mx, my, x1, y1, width * 0.95, depth - 1, branchProb);
-        // Random branch
         if (Math.random() < branchProb && depth > 2) {
           const angle = Math.atan2(ny, nx) + (Math.random() - 0.5) * 1.2;
           const bLen = len * (0.25 + Math.random() * 0.35);
@@ -329,42 +364,43 @@
         }
       }
 
-      // Main crack across the canvas, slight angle
-      const angle = (Math.random() - 0.5) * 0.4;
-      const cy = CRACK_TEX_H / 2 + (Math.random() - 0.5) * CRACK_TEX_H * 0.3;
-      const startX = 50;
-      const startY = cy - Math.tan(angle) * (CRACK_TEX_W / 2 - 50);
-      const endX = CRACK_TEX_W - 50;
-      const endY = cy + Math.tan(angle) * (CRACK_TEX_W / 2 - 50);
-      drawJaggedLine(startX, startY, endX, endY, 5, 7, 0.45);
-
-      // Slight highlight along one edge — gives the crack visual depth
-      // (suggests a 3D chip catching light on its facet)
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.lineWidth = 1;
-      drawJaggedLine(startX + 2, startY - 1, endX + 2, endY - 1, 1, 6, 0.2);
+      // Main crack — biased away from the exact center so side walls
+      // (which sample 0.5, 0.5) stay solid.
+      const angle = (Math.random() - 0.5) * 0.35;
+      // Put the crack in upper or lower 35% to avoid the center
+      const half = Math.random() < 0.5 ? -1 : 1;
+      const cy = CRACK_TEX_H * 0.5 + half * CRACK_TEX_H * (0.18 + Math.random() * 0.15);
+      const startX = 40;
+      const startY = cy - Math.tan(angle) * (CRACK_TEX_W / 2 - 40);
+      const endX = CRACK_TEX_W - 40;
+      const endY = cy + Math.tan(angle) * (CRACK_TEX_W / 2 - 40);
+      drawJaggedLine(startX, startY, endX, endY, 7, 7, 0.55);
 
       return c;
     }
 
-    const crackGeo = new THREE.PlaneGeometry(1200, 600);
-    const crackMat = new THREE.MeshBasicMaterial({
-      color: 0x080808,           // very dark — reads as crevice shadow
-      transparent: true,
-      opacity: 0,
-      side: THREE.DoubleSide,
-      depthTest: false,
-      depthWrite: false,
-      alphaMap: new THREE.CanvasTexture(generateCrackCanvas()),
-    });
-    const crackMesh = new THREE.Mesh(crackGeo, crackMat);
-    crackMesh.renderOrder = 999;
-    crackMesh.position.set(0, 0, 80);
-    logoGroup.add(crackMesh);
+    // Pre-build one CanvasTexture we'll mutate each cycle.
+    const crackCanvas = generateCrackCanvas();
+    const crackTexture = new THREE.CanvasTexture(crackCanvas);
+    crackTexture.wrapS = crackTexture.wrapT = THREE.ClampToEdgeWrapping;
+    crackTexture.flipY = false;   // our UVGenerator does 1-y flip on the front face already
 
     let crackState = 'idle';
     let crackT0 = 0;
     let nextCrackAt = performance.now() + 6000 + Math.random() * 4000;
+
+    function setCrackActive(active) {
+      if (active) {
+        material.alphaMap = crackTexture;
+        material.transparent = true;
+        material.needsUpdate = true;
+      } else {
+        material.alphaMap = null;
+        material.alphaTest = 0;
+        material.transparent = false;
+        material.needsUpdate = true;
+      }
+    }
 
     // -- Ambient particles (atmospheric drift) --
     // 80 tiny white dots drifting slowly in the scene. Adds atmosphere
@@ -550,37 +586,40 @@
         if (t >= 1) { tweenFrom = null; tweenTo = null; }
       }
 
-      // Crack animation cycle
-      // Lifecycle: 0.5s fade-in → 5s hold → 2s fade-out (total ~7.5s)
+      // Crack animation cycle — animate alphaTest threshold on the LOGO
+      // material to cut out crack-shaped pixels in 3D (the logo literally
+      // splits, holes rotate with the geometry).
+      // Lifecycle: 1s fade-in (alphaTest 0 → 0.5) → 5s hold → 2s fade-out (0.5 → 0)
       const now = performance.now();
       if (crackState === 'idle' && now >= nextCrackAt) {
         crackState = 'showing';
         crackT0 = now;
-        // Generate a fresh crack texture for this cycle (never same shape twice)
-        crackMat.alphaMap.image = generateCrackCanvas();
-        crackMat.alphaMap.needsUpdate = true;
-        // Random small rotation/position offset within the logo
-        crackMesh.rotation.z = (Math.random() - 0.5) * 0.3;
-        crackMesh.position.x = (Math.random() - 0.5) * 100;
-        crackMesh.position.y = (Math.random() - 0.5) * 60;
+        // Regenerate a fresh crack shape for this cycle
+        const fresh = generateCrackCanvas();
+        const ctx = crackCanvas.getContext('2d');
+        ctx.clearRect(0, 0, CRACK_TEX_W, CRACK_TEX_H);
+        ctx.drawImage(fresh, 0, 0);
+        crackTexture.needsUpdate = true;
+        setCrackActive(true);
       }
       if (crackState === 'showing') {
-        const elapsed = (now - crackT0) / 1000;  // seconds
-        const FADE_IN = 0.5, HOLD = 5.0, FADE_OUT = 2.0;
-        const PEAK = 0.85;
-        let opacity;
+        const elapsed = (now - crackT0) / 1000;
+        const FADE_IN = 1.0, HOLD = 5.0, FADE_OUT = 2.0;
+        const PEAK_THRESH = 0.5;
+        let thresh;
         if (elapsed < FADE_IN) {
-          opacity = (elapsed / FADE_IN) * PEAK;
+          thresh = (elapsed / FADE_IN) * PEAK_THRESH;
         } else if (elapsed < FADE_IN + HOLD) {
-          opacity = PEAK;
+          thresh = PEAK_THRESH;
         } else if (elapsed < FADE_IN + HOLD + FADE_OUT) {
-          opacity = PEAK * (1 - (elapsed - FADE_IN - HOLD) / FADE_OUT);
+          thresh = PEAK_THRESH * (1 - (elapsed - FADE_IN - HOLD) / FADE_OUT);
         } else {
-          opacity = 0;
+          thresh = 0;
+          setCrackActive(false);
           crackState = 'idle';
           nextCrackAt = now + 18000 + Math.random() * 15000;
         }
-        crackMat.opacity = opacity;
+        material.alphaTest = thresh;
       }
 
       parallaxX += (parallaxTargetX - parallaxX) * 0.05;
