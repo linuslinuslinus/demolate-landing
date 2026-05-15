@@ -143,125 +143,53 @@
     fillLight.position.set(-500, -300, 400);
     scene.add(fillLight);
 
-    // -- Stainless steel texture --
-    // Clean polished steel with a subtle horizontal brushed grain.
-    // Simple by design: one heightmap (horizontal streaks), derived normal,
-    // very mild roughness variation, anisotropic reflection on the material.
-    const TEX_SIZE = 1024;
+    // -- Real PBR textures from PolyHaven (CC0 license) --
+    // Procedural noise can't match the photographic feel of real PBR texture
+    // sets. PolyHaven serves CC0 maps via Cloudflare CDN with CORS open, so we
+    // can load them directly from the browser.
+    //
+    // Picked set: rusty_metal_sheet (bluish-gray painted steel, scratched,
+    // rust streaks, muted metallic sheen). Closest visual match to ref2.
+    const PH_BASE = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rusty_metal_sheet';
+    const PH_SLUG = 'rusty_metal_sheet';
 
-    // Build a horizontal-streaks heightmap: each row has a smoothly-varying
-    // baseline plus tiny per-pixel jitter. Rows DIFFER from each other to
-    // create the visible brushed grain. Looking along grain → uniform.
-    // Looking across grain → streaks of light/dark.
-    const heights = new Float32Array(TEX_SIZE * TEX_SIZE);
-    for (let y = 0; y < TEX_SIZE; y++) {
-      // Slow row drift + per-row offset
-      const slow = Math.sin(y * 0.03) * 0.04 + Math.cos(y * 0.011) * 0.02;
-      const rowBase = 0.55 + slow + (Math.random() - 0.5) * 0.05;
-      for (let x = 0; x < TEX_SIZE; x++) {
-        // Tiny per-pixel jitter along X (coherent streaks since adjacent x's
-        // get small differences, but rows have larger differences)
-        const jitter = (Math.random() - 0.5) * 0.04;
-        let v = rowBase + jitter;
-        // Occasional darker scratch line (single pixel)
-        if (Math.random() < 0.0005) v -= 0.12;
-        heights[y * TEX_SIZE + x] = Math.min(1, Math.max(0, v));
-      }
+    const texLoader = new THREE.TextureLoader();
+    texLoader.crossOrigin = 'anonymous';
+
+    function loadPhTex(map, colorSpace) {
+      const tex = texLoader.load(`${PH_BASE}/${PH_SLUG}_${map}_1k.jpg`);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.colorSpace = colorSpace;
+      return tex;
     }
 
-    // ALBEDO: subtle horizontal brushed streaks on a cool-silver base.
-    const colorCanvas = document.createElement('canvas');
-    colorCanvas.width = colorCanvas.height = TEX_SIZE;
-    const actx = colorCanvas.getContext('2d');
-    const aimg = actx.createImageData(TEX_SIZE, TEX_SIZE);
-    for (let i = 0; i < heights.length; i++) {
-      const v = heights[i];
-      // Cool silver: shift around #c0c4c8, range tight (~±20)
-      const shift = (v - 0.55) * 50;
-      const r = 196 + shift;
-      const g = 200 + shift;
-      const b = 206 + shift;
-      const px = i * 4;
-      aimg.data[px]     = Math.max(0, Math.min(255, r));
-      aimg.data[px + 1] = Math.max(0, Math.min(255, g));
-      aimg.data[px + 2] = Math.max(0, Math.min(255, b));
-      aimg.data[px + 3] = 255;
-    }
-    actx.putImageData(aimg, 0, 0);
+    const colorTex = loadPhTex('diff', THREE.SRGBColorSpace);
+    const normalTex = loadPhTex('nor_gl', THREE.NoColorSpace);
+    const roughnessTex = loadPhTex('rough', THREE.NoColorSpace);
+    const aoTex = loadPhTex('ao', THREE.NoColorSpace);
 
-    // ROUGHNESS: tight range, mid-low. Slight variation along the brushed grain.
-    const weatheredCanvas = document.createElement('canvas');
-    weatheredCanvas.width = weatheredCanvas.height = TEX_SIZE;
-    const rctx = weatheredCanvas.getContext('2d');
-    const rimg = rctx.createImageData(TEX_SIZE, TEX_SIZE);
-    for (let i = 0; i < heights.length; i++) {
-      // Base 0.32 (semi-polished steel), +/- small variation from heightmap
-      let rough = 0.32 + (heights[i] - 0.55) * 0.18;
-      rough = Math.min(1, Math.max(0, rough));
-      const px = i * 4;
-      const val = rough * 255;
-      rimg.data[px] = val;
-      rimg.data[px + 1] = val;
-      rimg.data[px + 2] = val;
-      rimg.data[px + 3] = 255;
-    }
-    rctx.putImageData(rimg, 0, 0);
-
-    // Sobel-derived normal map from heightmap
-    const normalCanvas = document.createElement('canvas');
-    normalCanvas.width = normalCanvas.height = TEX_SIZE;
-    const nctx = normalCanvas.getContext('2d');
-    const nimg = nctx.createImageData(TEX_SIZE, TEX_SIZE);
-    const at = (x, y) => heights[((y+TEX_SIZE)%TEX_SIZE)*TEX_SIZE + ((x+TEX_SIZE)%TEX_SIZE)] * 255;
-    for (let y = 0; y < TEX_SIZE; y++) {
-      for (let x = 0; x < TEX_SIZE; x++) {
-        const dx = (at(x+1,y-1)+2*at(x+1,y)+at(x+1,y+1)) - (at(x-1,y-1)+2*at(x-1,y)+at(x-1,y+1));
-        const dy = (at(x-1,y+1)+2*at(x,y+1)+at(x+1,y+1)) - (at(x-1,y-1)+2*at(x,y-1)+at(x+1,y-1));
-        const dz = 100;
-        const len = Math.hypot(dx, dy, dz) || 1;
-        const i = (y*TEX_SIZE+x)*4;
-        nimg.data[i] = ((dx/len)*0.5+0.5)*255;
-        nimg.data[i+1] = ((dy/len)*0.5+0.5)*255;
-        nimg.data[i+2] = ((dz/len)*0.5+0.5)*255;
-        nimg.data[i+3] = 255;
-      }
-    }
-    nctx.putImageData(nimg, 0, 0);
-
-    // ExtrudeGeometry UVs are in shape coords (~0..1003), not normalized.
-    // 1.0 tile across the logo = no visible repetition (the seams are hidden
-    // behind the logo's edges).
+    // ExtrudeGeometry UVs are in shape coords (~0..1003, not normalized).
+    // 1.0 tile across the logo width hides texture seams behind the edges.
     const TILES = 1.0;
     const REPEAT_X = TILES / 1003;
-    const REPEAT_Y = TILES / 471 * (471 / 1003);  // keep square-ish tiles given aspect
+    const REPEAT_Y = TILES / 1003;  // square sampling (PBR maps are square)
+    [colorTex, normalTex, roughnessTex, aoTex].forEach(t => {
+      t.repeat.set(REPEAT_X, REPEAT_Y);
+    });
 
-    const roughnessTex = new THREE.CanvasTexture(weatheredCanvas);
-    roughnessTex.wrapS = roughnessTex.wrapT = THREE.RepeatWrapping;
-    roughnessTex.repeat.set(REPEAT_X, REPEAT_Y);
-    roughnessTex.colorSpace = THREE.NoColorSpace;
-
-    const normalTex = new THREE.CanvasTexture(normalCanvas);
-    normalTex.wrapS = normalTex.wrapT = THREE.RepeatWrapping;
-    normalTex.repeat.set(REPEAT_X, REPEAT_Y);
-    normalTex.colorSpace = THREE.NoColorSpace;
-
-    const colorTex = new THREE.CanvasTexture(colorCanvas);
-    colorTex.wrapS = colorTex.wrapT = THREE.RepeatWrapping;
-    colorTex.repeat.set(REPEAT_X, REPEAT_Y);
-    colorTex.colorSpace = THREE.SRGBColorSpace;
-
-    // Stainless steel — fully metallic, semi-polished, subtle brushed grain.
+    // Aged painted steel material. metalness/roughness inherent to the
+    // texture set; we multiply both by 1.0 so the maps drive the values.
     const material = new THREE.MeshPhysicalMaterial({
       color: 0xffffff,
       map: colorTex,
       metalness: 1.0,
-      roughness: 1.0,              // multiplied by roughnessMap (real values come from the map)
+      roughness: 1.0,
       roughnessMap: roughnessTex,
       normalMap: normalTex,
-      normalScale: new THREE.Vector2(0.18, 0.04),  // bumps along grain direction only
-      envMapIntensity: 1.6,         // bright reflections, chrome-like
-      anisotropy: 0.75,             // brushed metal directional reflection
-      anisotropyRotation: 0,        // horizontal grain
+      normalScale: new THREE.Vector2(0.7, 0.7),
+      aoMap: aoTex,
+      aoMapIntensity: 1.0,
+      envMapIntensity: 1.0,
     });
 
     const innerGroup = new THREE.Group();
