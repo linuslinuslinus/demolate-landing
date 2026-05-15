@@ -267,16 +267,9 @@
         ctx.stroke();
       }
 
-      // Layer 7: small dings + pits
-      for (let i = 0; i < 110; i++) {
-        const x = Math.random() * size;
-        const y = Math.random() * size;
-        const r = 0.8 + Math.random() * 2.2;
-        ctx.fillStyle = `rgba(40,40,40,${0.25 + Math.random() * 0.3})`;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      // (Layer 7 — small dings — removed. Was reading as digital speckle
+      // rather than embedded surface pits because dot-on-roughness-map doesn't
+      // translate to "recessed pit" the way it would on a height/normal map.)
 
       return c;
     }
@@ -357,9 +350,9 @@
     nctx.putImageData(nimg, 0, 0);
 
     // ExtrudeGeometry UVs are in shape coords (~0..1003), not normalized.
-    // For weathered chrome we want 2-3 visible tiles across the logo so the
-    // scratches and wear patches read at scene scale (not too fine, not too coarse).
-    const TILES = 2.5;
+    // 1.0 tile across the logo = no visible repetition (the seams are hidden
+    // behind the logo's edges).
+    const TILES = 1.0;
     const REPEAT_X = TILES / 1003;
     const REPEAT_Y = TILES / 471 * (471 / 1003);  // keep square-ish tiles given aspect
 
@@ -379,15 +372,17 @@
     colorTex.colorSpace = THREE.SRGBColorSpace;
 
     // Construction-grade steel — satin finish, well-used tool surface.
+    // Slightly lower metalness (0.92) gives a small diffuse component which
+    // breaks the "perfect-CGI-mirror" feel.
     const material = new THREE.MeshPhysicalMaterial({
-      color: 0xa0a4a8,            // brighter base so the color-tint map can darken naturally
-      map: colorTex,               // subtle warm/cool color variation across surface
-      metalness: 1.0,
-      roughness: 0.5,
+      color: 0xa0a4a8,
+      map: colorTex,
+      metalness: 0.92,
+      roughness: 0.55,
       roughnessMap: roughnessTex,
       normalMap: normalTex,
-      normalScale: new THREE.Vector2(0.4, 0.4),
-      envMapIntensity: 1.2,
+      normalScale: new THREE.Vector2(0.5, 0.5),
+      envMapIntensity: 1.0,
     });
 
     const innerGroup = new THREE.Group();
@@ -401,13 +396,15 @@
 <path d="m998.85,328.79l-311.97,138.79c-3.69,1.65-7.67,2.52-11.75,2.52h-6.69c-78.52,0-142.18-63.67-142.18-142.18v-176.54C526.26,70.1,590.21,3.82,670.57.03c4.47-.19,8.98.63,13.06,2.43l314.88,138.73c7.08,3.11,4.85,13.69-2.91,13.69h-272.04c-23.34,0-42.26,18.92-42.26,42.31v75.6c0,23.35,18.92,42.27,42.26,42.27h272.38c7.71,0,9.94,10.58,2.91,13.73Z"/>
 </svg>`);
 
+    // Softer bevel — bigger size + more segments creates a chamfered edge that
+    // catches light like a real machined part instead of a CGI box.
     const extrudeSettings = {
       depth: 110,
       bevelEnabled: true,
-      bevelSegments: 2,
-      bevelSize: 2,
-      bevelThickness: 2,
-      curveSegments: 24,
+      bevelSegments: 6,
+      bevelSize: 5,
+      bevelThickness: 5,
+      curveSegments: 28,
     };
 
     data.paths.forEach((path) => {
