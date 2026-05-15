@@ -143,107 +143,121 @@
     fillLight.position.set(-500, -300, 400);
     scene.add(fillLight);
 
-    // -- Weathered chrome / aged gunmetal texture --
-    // Reference look: polished metal with random scratches in all directions
-    // + cloudy wear patches + occasional bright spots where the surface is rubbed.
-    // Built procedurally on a 2D canvas (faster than per-pixel heightmap loops).
+    // -- Rusted iron texture --
+    // Dark iron base with organic warm-brown rust patches that bloom unevenly.
+    // Approach: build a SHARED rust mask (multi-octave noise → smoothstep) and
+    // derive THREE aligned maps from it:
+    //   - albedo (color): iron + rust blend
+    //   - roughness: iron is smooth, rust is rough
+    //   - height (for normalMap): rust raises the surface slightly
     const TEX_SIZE = 1024;
-    function makeWeatheredCanvas(size) {
-      const c = document.createElement('canvas');
-      c.width = c.height = size;
-      const ctx = c.getContext('2d');
 
-      // Base — uniform gray, mid value (close to material's roughness)
-      ctx.fillStyle = '#838383';
-      ctx.fillRect(0, 0, size, size);
-
-      // Layer 1: very subtle per-pixel micro-grain. Tighter range (±7) so the
-      // surface stays uniform-looking, just has fine tooth.
-      const grainImg = ctx.createImageData(size, size);
-      for (let i = 0; i < grainImg.data.length; i += 4) {
-        const v = 131 + (Math.random() - 0.5) * 14;
-        grainImg.data[i] = v;
-        grainImg.data[i + 1] = v;
-        grainImg.data[i + 2] = v;
-        grainImg.data[i + 3] = 255;
+    function valueNoise2D(size, octaves = 5) {
+      const result = new Float32Array(size * size);
+      let amp = 1, totalAmp = 0;
+      let scaleBase = 8;
+      for (let o = 0; o < octaves; o++) {
+        totalAmp += amp;
+        const cells = Math.ceil(size / scaleBase);
+        const cw = cells + 1;
+        const cellVals = new Float32Array(cw * cw);
+        for (let i = 0; i < cellVals.length; i++) cellVals[i] = Math.random();
+        for (let y = 0; y < size; y++) {
+          for (let x = 0; x < size; x++) {
+            const fx = x / scaleBase, fy = y / scaleBase;
+            const ix = Math.floor(fx), iy = Math.floor(fy);
+            const tx = fx - ix, ty = fy - iy;
+            const a = cellVals[iy * cw + ix];
+            const b = cellVals[iy * cw + ix + 1];
+            const c = cellVals[(iy + 1) * cw + ix];
+            const d = cellVals[(iy + 1) * cw + ix + 1];
+            const sx = tx * tx * (3 - 2 * tx);
+            const sy = ty * ty * (3 - 2 * ty);
+            const top = a * (1 - sx) + b * sx;
+            const bot = c * (1 - sx) + d * sx;
+            result[y * size + x] += amp * (top * (1 - sy) + bot * sy);
+          }
+        }
+        amp *= 0.55;
+        scaleBase = Math.max(2, Math.floor(scaleBase * 0.5));
       }
-      ctx.putImageData(grainImg, 0, 0);
-
-      // Layer 2: a few VERY soft large drift zones — barely there, just enough
-      // to break uniformity across the tile.
-      for (let i = 0; i < 4; i++) {
-        const x = Math.random() * size;
-        const y = Math.random() * size;
-        const r = size * 0.45 + Math.random() * size * 0.3;
-        const dark = Math.random() < 0.5;
-        const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-        grad.addColorStop(0, dark ? 'rgba(110,110,110,0.10)' : 'rgba(170,170,170,0.08)');
-        grad.addColorStop(1, 'rgba(128,128,128,0)');
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // No scratches, no patches, no dings. Flat iron is meant to be flat.
-      // The grain + drift zones are the entire texture.
-
-      return c;
+      for (let i = 0; i < result.length; i++) result[i] /= totalAmp;
+      return result;
     }
 
-    // Subtle color-variation canvas: dark iron with cool drift.
-    function makeColorVariationCanvas(size) {
-      const c = document.createElement('canvas');
-      c.width = c.height = size;
-      const ctx = c.getContext('2d');
-      ctx.fillStyle = '#3e3f42';  // dark iron base
-      ctx.fillRect(0, 0, size, size);
-
-      // Cool / cool-warm drift tints — keep it heavy and industrial, no warm rust.
-      const tints = [
-        'rgba(50,55,60,0.28)',     // deeper cool patches
-        'rgba(80,85,90,0.18)',     // slightly lighter cool drift
-        'rgba(60,58,55,0.18)',     // very subtle warm graphite
-      ];
-      for (let i = 0; i < 8; i++) {
-        const x = Math.random() * size;
-        const y = Math.random() * size;
-        const r = size * 0.28 + Math.random() * size * 0.4;
-        const tint = tints[Math.floor(Math.random() * tints.length)];
-        const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-        grad.addColorStop(0, tint);
-        grad.addColorStop(1, 'rgba(62,63,66,0)');
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      return c;
+    const rustNoise = valueNoise2D(TEX_SIZE, 5);
+    const rustMask = new Float32Array(TEX_SIZE * TEX_SIZE);
+    for (let i = 0; i < rustMask.length; i++) {
+      // Stretch + smoothstep → ~50/50 iron vs rust with smooth organic edges
+      let v = (rustNoise[i] - 0.45) * 2.4;
+      v = Math.min(1, Math.max(0, v));
+      v = v * v * (3 - 2 * v);
+      rustMask[i] = v;
     }
-    const colorCanvas = makeColorVariationCanvas(TEX_SIZE);
 
-    const weatheredCanvas = makeWeatheredCanvas(TEX_SIZE);
-    // Extract grayscale heights from canvas for normal-map derivation
-    const ___ictx = weatheredCanvas.getContext('2d');
-    const ___idata = ___ictx.getImageData(0, 0, TEX_SIZE, TEX_SIZE);
+    // ALBEDO: iron base + multi-tone rust where mask > 0.
+    const colorCanvas = document.createElement('canvas');
+    colorCanvas.width = colorCanvas.height = TEX_SIZE;
+    const actx = colorCanvas.getContext('2d');
+    const aimg = actx.createImageData(TEX_SIZE, TEX_SIZE);
+    for (let i = 0; i < rustMask.length; i++) {
+      const m = rustMask[i];
+      // Iron: dark graphite gray
+      const ironR = 56, ironG = 56, ironB = 60;
+      let r, g, b;
+      if (m < 0.35) {
+        // Thin rust: warm orange tint over iron
+        const t = m / 0.35;
+        const orR = 168, orG = 94, orB = 44;
+        r = ironR * (1 - t) + orR * t;
+        g = ironG * (1 - t) + orG * t;
+        b = ironB * (1 - t) + orB * t;
+      } else if (m < 0.75) {
+        // Medium rust: brown
+        const t = (m - 0.35) / 0.40;
+        r = 168 * (1 - t) + 107 * t;
+        g = 94 * (1 - t) + 56 * t;
+        b = 44 * (1 - t) + 24 * t;
+      } else {
+        // Deep rust: dark brown / blackened oxidation
+        const t = (m - 0.75) / 0.25;
+        r = 107 * (1 - t) + 46 * t;
+        g = 56 * (1 - t) + 24 * t;
+        b = 24 * (1 - t) + 8 * t;
+      }
+      // Per-pixel grain
+      const grain = (Math.random() - 0.5) * 16;
+      const px = i * 4;
+      aimg.data[px]     = Math.max(0, Math.min(255, r + grain));
+      aimg.data[px + 1] = Math.max(0, Math.min(255, g + grain));
+      aimg.data[px + 2] = Math.max(0, Math.min(255, b + grain));
+      aimg.data[px + 3] = 255;
+    }
+    actx.putImageData(aimg, 0, 0);
+
+    // ROUGHNESS: iron is smooth (~0.4), rust is very rough (~0.95).
+    const weatheredCanvas = document.createElement('canvas');
+    weatheredCanvas.width = weatheredCanvas.height = TEX_SIZE;
+    const rctx = weatheredCanvas.getContext('2d');
+    const rimg = rctx.createImageData(TEX_SIZE, TEX_SIZE);
+    for (let i = 0; i < rustMask.length; i++) {
+      let rough = 0.4 + 0.55 * rustMask[i];
+      rough += (Math.random() - 0.5) * 0.05;
+      rough = Math.min(1, Math.max(0, rough));
+      const px = i * 4;
+      const v = rough * 255;
+      rimg.data[px] = v;
+      rimg.data[px + 1] = v;
+      rimg.data[px + 2] = v;
+      rimg.data[px + 3] = 255;
+    }
+    rctx.putImageData(rimg, 0, 0);
+
+    // HEIGHTS for normal map: rust raises the surface slightly (corrosion bumps).
     const heights = new Float32Array(TEX_SIZE * TEX_SIZE);
-    for (let i = 0; i < heights.length; i++) {
-      heights[i] = ___idata.data[i * 4] / 255;
+    for (let i = 0; i < rustMask.length; i++) {
+      heights[i] = Math.min(1, Math.max(0, rustMask[i] * 0.85 + Math.random() * 0.15));
     }
-
-    // Render heightmap as grayscale CanvasTexture (used for roughness modulation)
-    const heightCanvas = document.createElement('canvas');
-    heightCanvas.width = heightCanvas.height = TEX_SIZE;
-    const hctx = heightCanvas.getContext('2d');
-    const himg = hctx.createImageData(TEX_SIZE, TEX_SIZE);
-    for (let i = 0; i < heights.length; i++) {
-      const px = heights[i] * 255;
-      himg.data[i*4] = px;
-      himg.data[i*4+1] = px;
-      himg.data[i*4+2] = px;
-      himg.data[i*4+3] = 255;
-    }
-    hctx.putImageData(himg, 0, 0);
 
     // Sobel-derived normal map from heightmap
     const normalCanvas = document.createElement('canvas');
@@ -288,16 +302,19 @@
     colorTex.repeat.set(REPEAT_X, REPEAT_Y);
     colorTex.colorSpace = THREE.SRGBColorSpace;
 
-    // Flat iron / sheet iron — uniform matte surface, dark gray, minimal detail.
+    // Rusted iron: base color is pure white so the albedo texture (which has
+    // iron grays + rust browns baked in) renders at its true colors.
+    // metalness 1.0 affects only the iron parts (rust is non-metallic by
+    // physics, but our roughness map keeps it matte → it reads correctly).
     const material = new THREE.MeshPhysicalMaterial({
-      color: 0x55585c,            // flat iron
+      color: 0xffffff,
       map: colorTex,
-      metalness: 0.72,
-      roughness: 0.72,             // uniform matte
+      metalness: 0.85,             // strong on iron, washed out where rust roughness is high
+      roughness: 1.0,              // multiplied by roughnessMap (which has the real values)
       roughnessMap: roughnessTex,
       normalMap: normalTex,
-      normalScale: new THREE.Vector2(0.18, 0.18),  // very subtle bump, near-flat
-      envMapIntensity: 0.45,       // very low — flat iron doesn't reflect much
+      normalScale: new THREE.Vector2(0.55, 0.55),
+      envMapIntensity: 0.8,
     });
 
     const innerGroup = new THREE.Group();
