@@ -86,8 +86,8 @@ def rendered_screenshot(static_server):
 def _sample_logo_pixels(image_path: Path):
     """Return list of (r,g,b) tuples for non-background pixels in the
     central logo region of the screenshot."""
-    Image = pytest.importorskip("PIL.Image", reason="Pillow required").__class__ \
-        if False else __import__("PIL.Image", fromlist=["Image"]).Image  # type: ignore
+    pytest.importorskip("PIL", reason="Pillow required")
+    from PIL import Image  # module, not class — Image.open lives on the module
 
     img = Image.open(image_path).convert("RGB")
     w, h = img.size
