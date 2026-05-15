@@ -143,15 +143,10 @@
     fillLight.position.set(-500, -300, 400);
     scene.add(fillLight);
 
-    // -- Aged metal texture (ref2-dominant: dark charcoal with subtle warm hints + ref3 scratches) --
-    // Dominant aesthetic: dark forged steel that's been worked & weathered. Only
-    // small, low-saturation warm tints (not orange rust). Fine random scratches.
-    // Approach:
-    //   - LOW-coverage rust mask (~15% area, soft alpha tint rather than full replace)
-    //   - Two noise fields: macro for warm patches, fine for micro grain
-    //   - Scratch overlay drawn as low-contrast vector strokes on the albedo canvas
-    //   - Roughness: mostly mid (0.65-0.78) with slight cloudy variation
-    //   - Normal map driven by fine-grain noise + faint rust bumps
+    // -- Stainless steel texture --
+    // Clean polished steel with a subtle horizontal brushed grain.
+    // Simple by design: one heightmap (horizontal streaks), derived normal,
+    // very mild roughness variation, anisotropic reflection on the material.
     const TEX_SIZE = 1024;
 
     function valueNoise2D(size, octaves = 5, scaleStart = 8) {
