@@ -197,9 +197,6 @@
       aoMap: aoTex,
       aoMapIntensity: 0.9,
       envMapIntensity: 1.2,
-      alphaMap: null,            // set during crack lifecycle
-      alphaTest: 0,              // animated from 0 → ~0.4 to grow the crack
-      transparent: false,
     });
 
     // Three-level group hierarchy:
@@ -315,7 +312,7 @@
       if (e.key === 'm' || e.key === 'M') cyclePreset();
     });
 
-    // -- Crack animation (true 3D split) --
+    /* CRACK ANIMATION REMOVED. Code preserved as comments for future revival.
     // Approach: use a procedurally drawn jagged crack canvas as the LOGO
     // material's alphaMap, animating alphaTest from 0 → ~0.45 → 0 over the
     // cycle. When alphaTest rises, pixels darker than the threshold get
@@ -416,17 +413,11 @@
     let nextCrackAt = performance.now() + 6000 + Math.random() * 4000;
 
     function setCrackActive(active) {
-      if (active) {
-        material.alphaMap = crackTexture;
-        material.transparent = true;
-        material.needsUpdate = true;
-      } else {
-        material.alphaMap = null;
-        material.alphaTest = 0;
-        material.transparent = false;
-        material.needsUpdate = true;
-      }
+      // no-op (crack disabled)
     }
+    */
+    // crack disabled — no-op for animate loop:
+    let crackState = 'disabled';
 
     // -- Ambient particles (atmospheric drift) --
     // 80 tiny white dots drifting slowly in the scene. Adds atmosphere
@@ -612,41 +603,7 @@
         if (t >= 1) { tweenFrom = null; tweenTo = null; }
       }
 
-      // Crack animation cycle — animate alphaTest threshold on the LOGO
-      // material to cut out crack-shaped pixels in 3D (the logo literally
-      // splits, holes rotate with the geometry).
-      // Lifecycle: 1s fade-in (alphaTest 0 → 0.5) → 5s hold → 2s fade-out (0.5 → 0)
-      const now = performance.now();
-      if (crackState === 'idle' && now >= nextCrackAt) {
-        crackState = 'showing';
-        crackT0 = now;
-        // Regenerate a fresh crack shape for this cycle
-        const fresh = generateCrackCanvas();
-        const ctx = crackCanvas.getContext('2d');
-        ctx.clearRect(0, 0, CRACK_TEX_W, CRACK_TEX_H);
-        ctx.drawImage(fresh, 0, 0);
-        crackTexture.needsUpdate = true;
-        setCrackActive(true);
-      }
-      if (crackState === 'showing') {
-        const elapsed = (now - crackT0) / 1000;
-        const FADE_IN = 1.0, HOLD = 5.0, FADE_OUT = 2.0;
-        const PEAK_THRESH = 0.5;
-        let thresh;
-        if (elapsed < FADE_IN) {
-          thresh = (elapsed / FADE_IN) * PEAK_THRESH;
-        } else if (elapsed < FADE_IN + HOLD) {
-          thresh = PEAK_THRESH;
-        } else if (elapsed < FADE_IN + HOLD + FADE_OUT) {
-          thresh = PEAK_THRESH * (1 - (elapsed - FADE_IN - HOLD) / FADE_OUT);
-        } else {
-          thresh = 0;
-          setCrackActive(false);
-          crackState = 'idle';
-          nextCrackAt = now + 18000 + Math.random() * 15000;
-        }
-        material.alphaTest = thresh;
-      }
+      // Crack animation removed.
 
       parallaxX += (parallaxTargetX - parallaxX) * 0.05;
       parallaxY += (parallaxTargetY - parallaxY) * 0.05;
