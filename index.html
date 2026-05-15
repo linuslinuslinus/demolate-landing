@@ -153,14 +153,15 @@
       c.width = c.height = size;
       const ctx = c.getContext('2d');
 
-      // Base — satin steel
-      ctx.fillStyle = '#8a8a8a';
+      // Base — uniform gray, mid value (close to material's roughness)
+      ctx.fillStyle = '#838383';
       ctx.fillRect(0, 0, size, size);
 
-      // Layer 1: per-pixel micro-grain (the tooth of metal)
+      // Layer 1: very subtle per-pixel micro-grain. Tighter range (±7) so the
+      // surface stays uniform-looking, just has fine tooth.
       const grainImg = ctx.createImageData(size, size);
       for (let i = 0; i < grainImg.data.length; i += 4) {
-        const v = 138 + (Math.random() - 0.5) * 18;
+        const v = 131 + (Math.random() - 0.5) * 14;
         grainImg.data[i] = v;
         grainImg.data[i + 1] = v;
         grainImg.data[i + 2] = v;
@@ -168,17 +169,15 @@
       }
       ctx.putImageData(grainImg, 0, 0);
 
-      // Layer 2: large smooth wear zones (slow drift). Use very large
-      // radial gradients to create organic light/dark continents across the tile.
-      // These are the "this corner has more wear than that one" patterns.
-      for (let i = 0; i < 8; i++) {
+      // Layer 2: a few VERY soft large drift zones — barely there, just enough
+      // to break uniformity across the tile.
+      for (let i = 0; i < 4; i++) {
         const x = Math.random() * size;
         const y = Math.random() * size;
-        const r = size * 0.35 + Math.random() * size * 0.3;
+        const r = size * 0.45 + Math.random() * size * 0.3;
         const dark = Math.random() < 0.5;
         const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-        grad.addColorStop(0, dark ? 'rgba(95,95,95,0.20)' : 'rgba(190,190,190,0.18)');
-        grad.addColorStop(0.7, 'rgba(128,128,128,0.04)');
+        grad.addColorStop(0, dark ? 'rgba(110,110,110,0.10)' : 'rgba(170,170,170,0.08)');
         grad.addColorStop(1, 'rgba(128,128,128,0)');
         ctx.fillStyle = grad;
         ctx.beginPath();
@@ -186,90 +185,8 @@
         ctx.fill();
       }
 
-      // Layer 3: medium-scale wear patches (mottled, organic)
-      for (let i = 0; i < 22; i++) {
-        const x = Math.random() * size;
-        const y = Math.random() * size;
-        const r = 50 + Math.random() * 140;
-        const dark = Math.random() < 0.5;
-        const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-        grad.addColorStop(0, dark ? 'rgba(75,75,75,0.18)' : 'rgba(205,205,205,0.15)');
-        grad.addColorStop(0.6, 'rgba(128,128,128,0.06)');
-        grad.addColorStop(1, 'rgba(128,128,128,0)');
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(x, y, r, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // Layer 4: polished worn-through spots (where the surface has been
-      // rubbed smooth — high-contact areas like edges and grip points).
-      // These read as SHINIER (darker on the roughness map = lower roughness).
-      for (let i = 0; i < 14; i++) {
-        const x = Math.random() * size;
-        const y = Math.random() * size;
-        const rx = 20 + Math.random() * 80;
-        const ry = rx * (0.4 + Math.random() * 0.5);  // elliptical, like a contact zone
-        const grad = ctx.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
-        grad.addColorStop(0, 'rgba(60,60,60,0.28)');
-        grad.addColorStop(0.5, 'rgba(80,80,80,0.12)');
-        grad.addColorStop(1, 'rgba(128,128,128,0)');
-        ctx.save();
-        ctx.translate(x, y);
-        ctx.rotate(Math.random() * Math.PI);
-        ctx.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry));
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(0, 0, Math.max(rx, ry), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-
-      // Layer 5: hairline micro-scratches (the dominant fine detail).
-      // 1400 strokes, very short (was 2200, dialed back density).
-      // Slight bias toward horizontal direction (40% chance) for hand-tool feel
-      // (where a wrench gets dragged across a vise jaw in a roughly consistent line).
-      ctx.lineCap = 'round';
-      for (let i = 0; i < 1400; i++) {
-        const x = Math.random() * size;
-        const y = Math.random() * size;
-        const horiz = Math.random() < 0.4;
-        const angle = horiz
-          ? (Math.random() - 0.5) * 0.4         // near-horizontal ±0.2rad
-          : Math.random() * Math.PI * 2;
-        const len = 3 + Math.random() * 16;
-        const dark = Math.random() < 0.6;
-        const alpha = 0.05 + Math.random() * 0.16;
-        ctx.strokeStyle = dark
-          ? `rgba(50,50,50,${alpha})`
-          : `rgba(220,220,220,${alpha})`;
-        ctx.lineWidth = 0.4 + Math.random() * 0.5;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
-        ctx.stroke();
-      }
-
-      // Layer 6: rare larger scratches (still kept rare and subtle)
-      for (let i = 0; i < 14; i++) {
-        const x = Math.random() * size;
-        const y = Math.random() * size;
-        const angle = Math.random() * Math.PI * 2;
-        const len = 18 + Math.random() * 50;
-        const alpha = 0.12 + Math.random() * 0.16;
-        ctx.strokeStyle = Math.random() < 0.55
-          ? `rgba(55,55,55,${alpha})`
-          : `rgba(215,215,215,${alpha})`;
-        ctx.lineWidth = 0.5 + Math.random() * 0.5;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
-        ctx.stroke();
-      }
-
-      // (Layer 7 — small dings — removed. Was reading as digital speckle
-      // rather than embedded surface pits because dot-on-roughness-map doesn't
-      // translate to "recessed pit" the way it would on a height/normal map.)
+      // No scratches, no patches, no dings. Flat iron is meant to be flat.
+      // The grain + drift zones are the entire texture.
 
       return c;
     }
@@ -371,17 +288,16 @@
     colorTex.repeat.set(REPEAT_X, REPEAT_Y);
     colorTex.colorSpace = THREE.SRGBColorSpace;
 
-    // Cast iron / forged steel — dark, heavy, matte. Low metalness +
-    // high roughness reads as solid hand-forged metal, not shiny.
+    // Flat iron / sheet iron — uniform matte surface, dark gray, minimal detail.
     const material = new THREE.MeshPhysicalMaterial({
-      color: 0x4a4d50,            // dark iron
+      color: 0x55585c,            // flat iron
       map: colorTex,
-      metalness: 0.78,             // iron-ish, not pure-mirror
-      roughness: 0.78,             // matte cast finish
+      metalness: 0.72,
+      roughness: 0.72,             // uniform matte
       roughnessMap: roughnessTex,
       normalMap: normalTex,
-      normalScale: new THREE.Vector2(0.65, 0.65),
-      envMapIntensity: 0.55,       // low — iron doesn't mirror brightly
+      normalScale: new THREE.Vector2(0.18, 0.18),  // very subtle bump, near-flat
+      envMapIntensity: 0.45,       // very low — flat iron doesn't reflect much
     });
 
     const innerGroup = new THREE.Group();
