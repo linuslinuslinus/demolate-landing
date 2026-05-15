@@ -196,8 +196,16 @@
       envMapIntensity: 1.2,
     });
 
+    // Three-level group hierarchy:
+    //   parallaxGroup → handles mouse-parallax tilt (rotation.x + rotation.y)
+    //     └── logoGroup → handles scroll-driven spin (rotation.y)
+    //           └── innerGroup → SVG Y-flip + meshes
+    // This separation lets us apply parallax-Y rotation (left-right tilt)
+    // WITHOUT clashing with the spin's rotation.y.
     const innerGroup = new THREE.Group();
     const logoGroup = new THREE.Group();
+    const parallaxGroup = new THREE.Group();
+    parallaxGroup.add(logoGroup);
     logoGroup.add(innerGroup);
 
     const loader = new SVGLoader();
@@ -232,7 +240,7 @@
     const center = new THREE.Vector3();
     bbox.getCenter(center);
     innerGroup.position.sub(center);
-    scene.add(logoGroup);
+    scene.add(parallaxGroup);
 
     console.log('[demolate] paths:', data.paths.length, 'meshes:', innerGroup.children.length);
 
@@ -243,6 +251,7 @@
       { name: 'aged-steel',    color: 0x9aa0a4, metalness: 0.95, roughness: 1.0,  normalScale: 0.6, envMapIntensity: 1.2 },
       { name: 'polished',      color: 0xd2d5d8, metalness: 1.0,  roughness: 0.55, normalScale: 0.3, envMapIntensity: 1.8 },
       { name: 'copper-bronze', color: 0xb47238, metalness: 1.0,  roughness: 0.85, normalScale: 0.7, envMapIntensity: 1.4 },
+      { name: 'black-metal',   color: 0x383a3c, metalness: 1.0,  roughness: 0.6,  normalScale: 0.55, envMapIntensity: 1.1 },
     ];
     let presetIdx = 0;
     let tweenT0 = 0, tweenDur = 600;
@@ -272,23 +281,27 @@
     });
 
     // -- Crack animation: every 25-45s briefly flash a thin crack across the
-    // logo, then fade out over 1.5s. Implemented as a thin black plane sized
-    // to the logo bbox, parented to innerGroup so it rotates with the logo.
-    const crackGeo = new THREE.PlaneGeometry(800, 2);
+    // logo, then fade out over 1.5s. Implemented as a thin black plane
+    // parented to LOGOGROUP (not innerGroup, so it rotates with the spin but
+    // doesn't get the SVG Y-flip rotation that would put it behind the logo).
+    const crackGeo = new THREE.PlaneGeometry(900, 3);
     const crackMat = new THREE.MeshBasicMaterial({
       color: 0x000000,
       transparent: true,
       opacity: 0,
       side: THREE.DoubleSide,
+      depthTest: false,           // render on top regardless of depth
       depthWrite: false,
     });
     const crackMesh = new THREE.Mesh(crackGeo, crackMat);
-    crackMesh.position.set(0, 0, 60);  // slightly in front of the logo's front face
-    innerGroup.add(crackMesh);
+    crackMesh.renderOrder = 999;
+    crackMesh.position.set(0, 0, 80);  // clearly in front of the logo
+    logoGroup.add(crackMesh);
 
     let crackState = 'idle';
     let crackT0 = 0;
-    let nextCrackAt = performance.now() + 25000 + Math.random() * 20000;
+    // First crack appears 8-12s after load (so the user sees it without waiting forever)
+    let nextCrackAt = performance.now() + 8000 + Math.random() * 4000;
 
     // -- Ambient particles (atmospheric drift) --
     // 80 tiny white dots drifting slowly in the scene. Adds atmosphere
@@ -503,7 +516,10 @@
       parallaxX += (parallaxTargetX - parallaxX) * 0.05;
       parallaxY += (parallaxTargetY - parallaxY) * 0.05;
       if (!prefersReducedMotion) {
-        logoGroup.rotation.x = parallaxY * 0.1;
+        // Apply parallax to the OUTER parallaxGroup so it doesn't conflict
+        // with the spin's rotation.y on logoGroup.
+        parallaxGroup.rotation.x = parallaxY * 0.12;   // mouse up/down → logo tilts up/down
+        parallaxGroup.rotation.y = parallaxX * 0.18;   // mouse left/right → logo tilts left/right
       }
 
       // Drift particles. Wrap them around when they leave the visible volume.
