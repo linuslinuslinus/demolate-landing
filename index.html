@@ -209,25 +209,35 @@
     }
     nctx.putImageData(nimg, 0, 0);
 
+    // ExtrudeGeometry's default WorldUVGenerator produces UVs in the SHAPE's
+    // coordinate space (here ~0..1003 in U, ~0..471 in V), NOT normalized 0..1.
+    // So texture.repeat must be set as a small fraction to control visible
+    // tile density. ~10 tiles across the logo width = 10/1003 ≈ 0.01.
+    const TILES_X = 14;
+    const REPEAT_X = TILES_X / 1003;
+    const REPEAT_Y = TILES_X / 1003;  // square aspect for tiles
+
     const roughnessTex = new THREE.CanvasTexture(heightCanvas);
     roughnessTex.wrapS = roughnessTex.wrapT = THREE.RepeatWrapping;
-    roughnessTex.repeat.set(8, 4);
+    roughnessTex.repeat.set(REPEAT_X, REPEAT_Y);
     roughnessTex.colorSpace = THREE.NoColorSpace;
 
     const normalTex = new THREE.CanvasTexture(normalCanvas);
     normalTex.wrapS = normalTex.wrapT = THREE.RepeatWrapping;
-    normalTex.repeat.set(8, 4);
+    normalTex.repeat.set(REPEAT_X, REPEAT_Y);
     normalTex.colorSpace = THREE.NoColorSpace;
 
-    // Material — keep base color bright so logo stays visible. Texture adds
-    // surface variation through roughness + normal maps only.
+    // Material — concrete look. Darker base color so the texture shadows
+    // and highlights actually have contrast to read against.
     const material = new THREE.MeshStandardMaterial({
-      color: 0xf2efe9,           // off-white concrete
-      roughness: 0.7,            // matte
+      color: 0xb8b3a8,           // medium concrete gray (was 0xf2efe9 — too bright to show texture)
+      roughness: 0.85,
       metalness: 0.0,
       roughnessMap: roughnessTex,
       normalMap: normalTex,
-      normalScale: new THREE.Vector2(1.0, 1.0),
+      normalScale: new THREE.Vector2(2.2, 2.2),  // aggressive bump
+      aoMap: roughnessTex,                       // reuse height as AO (darker in valleys)
+      aoMapIntensity: 0.6,
     });
 
     const innerGroup = new THREE.Group();
