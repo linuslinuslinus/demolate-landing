@@ -153,20 +153,31 @@
       c.width = c.height = size;
       const ctx = c.getContext('2d');
 
-      // Base — mid gray (will modulate roughness around the material's base value)
-      ctx.fillStyle = '#888888';
+      // Base — mid gray (satin steel)
+      ctx.fillStyle = '#8a8a8a';
       ctx.fillRect(0, 0, size, size);
 
-      // Cloudy wear patches — darker and lighter blobs (areas where finish is worn through)
-      for (let i = 0; i < 55; i++) {
+      // Layer 1: fine micro-grain (film-grain-like noise across whole surface).
+      // Tiny 1px specks with low alpha give the surface tooth without scratches.
+      const grainImg = ctx.createImageData(size, size);
+      for (let i = 0; i < grainImg.data.length; i += 4) {
+        const v = 138 + (Math.random() - 0.5) * 22;  // ±11 around 138 (close to base)
+        grainImg.data[i] = v;
+        grainImg.data[i + 1] = v;
+        grainImg.data[i + 2] = v;
+        grainImg.data[i + 3] = 255;
+      }
+      ctx.putImageData(grainImg, 0, 0);
+
+      // Layer 2: subtle wear patches (much fainter than before — soft mottling).
+      for (let i = 0; i < 28; i++) {
         const x = Math.random() * size;
         const y = Math.random() * size;
-        const r = 40 + Math.random() * 180;
+        const r = 60 + Math.random() * 220;
         const dark = Math.random() < 0.5;
         const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-        const c1 = dark ? 'rgba(70,70,70,0.55)' : 'rgba(220,220,220,0.5)';
-        grad.addColorStop(0, c1);
-        grad.addColorStop(0.6, dark ? 'rgba(100,100,100,0.25)' : 'rgba(200,200,200,0.2)');
+        grad.addColorStop(0, dark ? 'rgba(80,80,80,0.22)' : 'rgba(200,200,200,0.18)');
+        grad.addColorStop(0.6, dark ? 'rgba(100,100,100,0.10)' : 'rgba(180,180,180,0.08)');
         grad.addColorStop(1, 'rgba(128,128,128,0)');
         ctx.fillStyle = grad;
         ctx.beginPath();
@@ -174,23 +185,54 @@
         ctx.fill();
       }
 
-      // Sharp directional scratches (the well-used metal look)
+      // Layer 3: HIGH-DENSITY fine micro-scratches (mostly short, mostly subtle).
+      // ~2200 hairline marks. Random angles. Variable opacity. This is the
+      // dominant character of a well-used construction-grade tool.
       ctx.lineCap = 'round';
-      for (let i = 0; i < 380; i++) {
+      ctx.globalCompositeOperation = 'source-over';
+      for (let i = 0; i < 2200; i++) {
         const x = Math.random() * size;
         const y = Math.random() * size;
         const angle = Math.random() * Math.PI * 2;
-        const len = 15 + Math.random() * 140;
-        const dark = Math.random() < 0.55;
-        const alpha = 0.18 + Math.random() * 0.5;
+        const len = 2 + Math.random() * 14;  // very short: 2-16px
+        const dark = Math.random() < 0.62;
+        const alpha = 0.05 + Math.random() * 0.18;  // soft
         ctx.strokeStyle = dark
-          ? `rgba(40,40,40,${alpha})`
-          : `rgba(245,245,245,${alpha})`;
-        ctx.lineWidth = 0.4 + Math.random() * 1.4;
+          ? `rgba(45,45,45,${alpha})`
+          : `rgba(225,225,225,${alpha})`;
+        ctx.lineWidth = 0.4 + Math.random() * 0.6;  // hairline
         ctx.beginPath();
         ctx.moveTo(x, y);
         ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
         ctx.stroke();
+      }
+
+      // Layer 4: rare larger scratches (the occasional heavier mark).
+      for (let i = 0; i < 22; i++) {
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const angle = Math.random() * Math.PI * 2;
+        const len = 25 + Math.random() * 60;
+        const alpha = 0.15 + Math.random() * 0.2;
+        ctx.strokeStyle = Math.random() < 0.5
+          ? `rgba(50,50,50,${alpha})`
+          : `rgba(220,220,220,${alpha})`;
+        ctx.lineWidth = 0.6 + Math.random() * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+        ctx.stroke();
+      }
+
+      // Layer 5: small dings / pits (tiny dark dots — chipped paint, gouges)
+      for (let i = 0; i < 90; i++) {
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const r = 1 + Math.random() * 2.5;
+        ctx.fillStyle = `rgba(35,35,35,${0.3 + Math.random() * 0.3})`;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
       }
 
       return c;
@@ -257,17 +299,17 @@
     normalTex.repeat.set(REPEAT_X, REPEAT_Y);
     normalTex.colorSpace = THREE.NoColorSpace;
 
-    // Weathered chrome / aged gunmetal — dark base, very metallic, varying
-    // roughness from the texture creates the "polished with scratches and worn
-    // spots" look.
+    // Construction-grade steel — satin finish, well-used tool surface.
+    // Base roughness 0.55 (satin, not chrome-polished). Map adds micro-grain
+    // variation. Slightly cooler color shift, less mirror-like.
     const material = new THREE.MeshPhysicalMaterial({
-      color: 0x6a6e72,            // dark gunmetal
+      color: 0x787d82,            // satin steel
       metalness: 1.0,
-      roughness: 0.32,             // base is polished; map varies per pixel
+      roughness: 0.55,             // satin, not glossy
       roughnessMap: roughnessTex,
       normalMap: normalTex,
-      normalScale: new THREE.Vector2(0.7, 0.7),
-      envMapIntensity: 1.8,        // strong env reflections for chrome character
+      normalScale: new THREE.Vector2(0.4, 0.4),  // subtler bump
+      envMapIntensity: 1.15,
     });
 
     const innerGroup = new THREE.Group();
