@@ -106,6 +106,7 @@
   <script type="module">
     import * as THREE from 'three';
     import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
     import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -122,6 +123,13 @@
 
     const scene = new THREE.Scene();
 
+    // PMREM-encoded environment for proper metallic reflections.
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
+
     const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 5000);
     camera.position.set(0, 0, 1200);
 
@@ -135,44 +143,32 @@
     fillLight.position.set(-500, -300, 400);
     scene.add(fillLight);
 
-    // -- Procedural concrete textures (heightmap → normalMap + roughnessMap) --
-    const TEX_SIZE = 512;
-    function makeHeights(size) {
+    // -- Brushed metal texture: horizontal linear grain --
+    // Each row has a base brightness + light per-pixel jitter. Looking down the
+    // grain (horizontally) you see clean, uniform reflection; across the grain
+    // (vertically) you see strong specular streaks. This is the brushed-metal
+    // signature.
+    const TEX_SIZE = 1024;
+    function makeBrushedHeights(size) {
       const h = new Float32Array(size * size);
-      // Worley grid noise: each grid cell has 1 point. Cellular pattern = aggregate.
-      const grid = 32;
-      const cps = Math.ceil(size / grid);
-      const cells = new Float32Array(cps * cps * 3);
-      for (let i = 0; i < cps * cps; i++) {
-        cells[i*3] = Math.random();
-        cells[i*3+1] = Math.random();
-        cells[i*3+2] = 0.5 + Math.random() * 0.5;
-      }
       for (let y = 0; y < size; y++) {
-        const gy = Math.floor(y / grid);
+        // Pick a row base that varies smoothly along Y
+        // (small per-row jitter + slow drift for natural variation)
+        const slow = Math.sin(y * 0.04) * 0.06;
+        const rowBase = 0.55 + slow + (Math.random() - 0.5) * 0.10;
         for (let x = 0; x < size; x++) {
-          const gx = Math.floor(x / grid);
-          let f1 = Infinity, f2 = Infinity, nh = 0;
-          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-            const cx = ((gx+dx)%cps+cps)%cps;
-            const cy = ((gy+dy)%cps+cps)%cps;
-            const ci = (cy*cps+cx)*3;
-            const px = (gx+dx)*grid + cells[ci]*grid;
-            const py = (gy+dy)*grid + cells[ci+1]*grid;
-            const d = Math.hypot(px-x, py-y);
-            if (d < f1) { f2 = f1; f1 = d; nh = cells[ci+2]; }
-            else if (d < f2) { f2 = d; }
-          }
-          const edge = Math.min(1, (f2 - f1) / 6);
-          let v = nh * (0.4 + 0.6 * edge) + Math.random() * 0.15;
-          if (Math.random() < 0.005) v -= 0.5;
-          h[y*size+x] = Math.min(1, Math.max(0, v));
+          // Per-pixel HORIZONTAL streaks: tiny variation that's coherent along X
+          const jitter = (Math.random() - 0.5) * 0.05;
+          let v = rowBase + jitter;
+          // Occasional darker scratch
+          if (Math.random() < 0.0007) v -= 0.18;
+          h[y * size + x] = Math.min(1, Math.max(0, v));
         }
       }
       return h;
     }
 
-    const heights = makeHeights(TEX_SIZE);
+    const heights = makeBrushedHeights(TEX_SIZE);
 
     // Render heightmap as grayscale CanvasTexture (used for roughness modulation)
     const heightCanvas = document.createElement('canvas');
@@ -209,13 +205,12 @@
     }
     nctx.putImageData(nimg, 0, 0);
 
-    // ExtrudeGeometry's default WorldUVGenerator produces UVs in the SHAPE's
-    // coordinate space (here ~0..1003 in U, ~0..471 in V), NOT normalized 0..1.
-    // So texture.repeat must be set as a small fraction to control visible
-    // tile density. ~10 tiles across the logo width = 10/1003 ≈ 0.01.
-    const TILES_X = 14;
-    const REPEAT_X = TILES_X / 1003;
-    const REPEAT_Y = TILES_X / 1003;  // square aspect for tiles
+    // ExtrudeGeometry UVs are in shape coords (~0..1003), not normalized.
+    // For brushed metal we want very stretched horizontal tiling so the grain
+    // looks long and continuous: ~4 tiles across width but only ~0.2 across the
+    // depth (so the grain runs the long way).
+    const REPEAT_X = 4 / 1003;
+    const REPEAT_Y = 60 / 471;  // dense vertically for many horizontal streaks
 
     const roughnessTex = new THREE.CanvasTexture(heightCanvas);
     roughnessTex.wrapS = roughnessTex.wrapT = THREE.RepeatWrapping;
@@ -227,17 +222,18 @@
     normalTex.repeat.set(REPEAT_X, REPEAT_Y);
     normalTex.colorSpace = THREE.NoColorSpace;
 
-    // Material — concrete look. Darker base color so the texture shadows
-    // and highlights actually have contrast to read against.
-    const material = new THREE.MeshStandardMaterial({
-      color: 0xb8b3a8,           // medium concrete gray (was 0xf2efe9 — too bright to show texture)
-      roughness: 0.85,
-      metalness: 0.0,
+    // Brushed steel: highly metallic, mid-low roughness, cool silver tone.
+    // Environment map drives the reflections; the brushed grain modulates them.
+    const material = new THREE.MeshPhysicalMaterial({
+      color: 0xc8ccd0,            // cool silver
+      metalness: 1.0,             // fully metallic
+      roughness: 0.42,             // semi-glossy
       roughnessMap: roughnessTex,
       normalMap: normalTex,
-      normalScale: new THREE.Vector2(2.2, 2.2),  // aggressive bump
-      aoMap: roughnessTex,                       // reuse height as AO (darker in valleys)
-      aoMapIntensity: 0.6,
+      normalScale: new THREE.Vector2(0.4, 0.05),  // streaky bump along X only
+      envMapIntensity: 1.4,
+      anisotropy: 0.85,           // strong directional reflection (the brushed-metal signature)
+      anisotropyRotation: 0,      // horizontal grain direction
     });
 
     const innerGroup = new THREE.Group();
