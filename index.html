@@ -119,6 +119,12 @@
   <script type="module">
     import * as THREE from 'three';
     import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
     const canvas = document.getElementById('stage');
     const renderer = new THREE.WebGLRenderer({
@@ -128,29 +134,116 @@
     });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000, 1);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
 
     const scene = new THREE.Scene();
+
+    // Generate a procedural studio environment (PMREM-encoded) for proper
+    // reflections + ambient bounce on PBR materials. No external HDR fetch.
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
 
     // Perspective camera. We push the camera back far enough that the
     // logo fills ~58% of the smaller viewport dimension.
     const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 5000);
     camera.position.set(0, 0, 1200);
 
-    // Lighting — needed for MeshStandardMaterial to show the extruded side faces.
-    // Three lights total:
-    //  - Soft ambient so the front is fully readable
-    //  - Key directional from upper right (creates a bright edge)
-    //  - Fill directional from lower left (rims the opposite edge so the silhouette
-    //    never goes black when rotating)
-    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    // Three-light setup for dramatic edge separation on the extruded side faces.
+    // Ambient stays low because the HDR environment already provides global fill.
+    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.0);
     keyLight.position.set(400, 600, 800);
     scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0xffffff, 0.55);
-    fillLight.position.set(-500, -300, 400);
+    const fillLight = new THREE.DirectionalLight(0xc8d4e8, 0.45);
+    fillLight.position.set(-500, -200, 300);
     scene.add(fillLight);
+
+    // Rim light from behind for silhouette pop during rotation.
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.7);
+    rimLight.position.set(0, 200, -800);
+    scene.add(rimLight);
+
+    // -- Procedural concrete textures --
+    // Generate normalMap + roughnessMap via Canvas2D so we don't ship
+    // multi-MB texture files. Tileable noise → bumpy industrial concrete feel.
+    function makeNoiseCanvas(size, octaves = 4) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      const img = ctx.createImageData(size, size);
+      // Multi-octave value noise via random + smoothing
+      for (let i = 0; i < img.data.length; i += 4) {
+        let v = 0;
+        let amp = 1;
+        let sum = 0;
+        for (let o = 0; o < octaves; o++) {
+          v += Math.random() * amp;
+          sum += amp;
+          amp *= 0.55;
+        }
+        v = (v / sum) * 255;
+        img.data[i] = v;
+        img.data[i + 1] = v;
+        img.data[i + 2] = v;
+        img.data[i + 3] = 255;
+      }
+      ctx.putImageData(img, 0, 0);
+      // Box blur for grit smoothness
+      ctx.filter = 'blur(0.7px) contrast(1.15)';
+      ctx.drawImage(c, 0, 0);
+      return c;
+    }
+
+    function canvasToNormalMap(srcCanvas, strength = 1.0) {
+      const size = srcCanvas.width;
+      const sctx = srcCanvas.getContext('2d');
+      const srcImg = sctx.getImageData(0, 0, size, size);
+      const dst = document.createElement('canvas');
+      dst.width = dst.height = size;
+      const dctx = dst.getContext('2d');
+      const dstImg = dctx.createImageData(size, size);
+      const idx = (x, y) => (((y + size) % size) * size + ((x + size) % size)) * 4;
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          const tl = srcImg.data[idx(x - 1, y - 1)];
+          const t  = srcImg.data[idx(x, y - 1)];
+          const tr = srcImg.data[idx(x + 1, y - 1)];
+          const l  = srcImg.data[idx(x - 1, y)];
+          const r  = srcImg.data[idx(x + 1, y)];
+          const bl = srcImg.data[idx(x - 1, y + 1)];
+          const b  = srcImg.data[idx(x, y + 1)];
+          const br = srcImg.data[idx(x + 1, y + 1)];
+          // Sobel
+          const dx = (tr + 2 * r + br) - (tl + 2 * l + bl);
+          const dy = (bl + 2 * b + br) - (tl + 2 * t + tr);
+          const dz = 255 / strength;
+          // Normalize
+          const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+          const i = (y * size + x) * 4;
+          dstImg.data[i]     = ((dx / len) * 0.5 + 0.5) * 255;
+          dstImg.data[i + 1] = ((dy / len) * 0.5 + 0.5) * 255;
+          dstImg.data[i + 2] = ((dz / len) * 0.5 + 0.5) * 255;
+          dstImg.data[i + 3] = 255;
+        }
+      }
+      dctx.putImageData(dstImg, 0, 0);
+      return dst;
+    }
+
+    const noiseCanvas = makeNoiseCanvas(512, 5);
+    const normalCanvas = canvasToNormalMap(noiseCanvas, 8.0);
+
+    const roughnessTex = new THREE.CanvasTexture(noiseCanvas);
+    roughnessTex.wrapS = roughnessTex.wrapT = THREE.RepeatWrapping;
+    roughnessTex.repeat.set(3, 1.5);
+
+    const normalTex = new THREE.CanvasTexture(normalCanvas);
+    normalTex.wrapS = normalTex.wrapT = THREE.RepeatWrapping;
+    normalTex.repeat.set(3, 1.5);
+    normalTex.colorSpace = THREE.NoColorSpace;
 
     // Logo SVG embedded inline so SVGLoader can parse without an extra fetch.
     const svgString = `<?xml version="1.0" encoding="UTF-8"?>
@@ -172,11 +265,18 @@
     const logoGroup = new THREE.Group();
     logoGroup.add(innerGroup);
 
-    // Standard material — slight roughness reads as solid plastic, fully white.
-    const material = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.45,
-      metalness: 0.05,
+    // Physical material — cast concrete look. PBR with procedural noise maps,
+    // env-map driven reflections (subtle, since roughness is high), no metalness.
+    const material = new THREE.MeshPhysicalMaterial({
+      color: 0xf6f5f1,          // off-white, like cast concrete
+      roughness: 0.78,           // matte, gritty
+      metalness: 0.0,
+      roughnessMap: roughnessTex,
+      normalMap: normalTex,
+      normalScale: new THREE.Vector2(0.35, 0.35),  // subtle bump
+      envMapIntensity: 0.85,
+      clearcoat: 0.06,           // microscopic sheen, just enough to catch light
+      clearcoatRoughness: 0.55,
     });
 
     // Extrude each path into a real 3D mesh with depth.
@@ -217,6 +317,50 @@
     // Diagnostics: log path/mesh counts so we can confirm parsing worked.
     console.log('[demolate] SVG paths parsed:', data.paths.length, '· meshes added:', innerGroup.children.length);
 
+    // -- Post-processing pipeline --
+    // RenderPass -> UnrealBloomPass (subtle, makes white edges glow gently)
+    // -> Vignette ShaderPass -> OutputPass
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.45,  // strength
+      0.85,  // radius
+      0.82   // threshold
+    );
+    composer.addPass(bloomPass);
+
+    // Custom vignette shader pass: subtle dark corners, focus on center.
+    const vignettePass = new ShaderPass({
+      uniforms: {
+        tDiffuse: { value: null },
+        offset: { value: 1.05 },
+        darkness: { value: 1.4 },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float offset;
+        uniform float darkness;
+        varying vec2 vUv;
+        void main() {
+          vec4 texel = texture2D(tDiffuse, vUv);
+          vec2 uv = (vUv - 0.5) * vec2(offset);
+          float vig = 1.0 - dot(uv, uv) * darkness;
+          gl_FragColor = vec4(texel.rgb * vig, texel.a);
+        }
+      `,
+    });
+    composer.addPass(vignettePass);
+    composer.addPass(new OutputPass());
+
     // Scroll-driven rotation
     const TOTAL_ROTATION = Math.PI * 4; // 2 full revolutions across the scroll
     let targetRot = 0;
@@ -235,18 +379,16 @@
       const w = window.innerWidth;
       const h = window.innerHeight;
       renderer.setSize(w, h, false);
+      composer.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
 
       // Fit logo into ~58% of the smaller viewport dimension.
-      // At camera.position.z and FOV, the visible height at z=0 is:
-      //   visibleHeight = 2 * tan(fov/2) * cameraZ
       const fovRad = camera.fov * Math.PI / 180;
       const visibleHeight = 2 * Math.tan(fovRad / 2) * camera.position.z;
       const visibleWidth = visibleHeight * camera.aspect;
       const target = Math.min(visibleWidth, visibleHeight) * 0.58;
       const bboxSize = bbox.getSize(new THREE.Vector3());
-      // Use whichever dimension limits the fit
       const scale = Math.min(target / bboxSize.x, target / bboxSize.y);
       logoGroup.scale.setScalar(scale);
     }
@@ -258,7 +400,7 @@
       // Smooth-follow the target rotation (light lerp so scroll feels physical)
       currentRot += (targetRot - currentRot) * 0.12;
       logoGroup.rotation.y = prefersReducedMotion ? 0 : currentRot;
-      renderer.render(scene, camera);
+      composer.render();
       requestAnimationFrame(animate);
     }
     animate();
