@@ -274,28 +274,28 @@
       return c;
     }
 
-    // Subtle color-variation canvas (warm/cool drift across the surface)
+    // Subtle color-variation canvas: dark iron with cool drift.
     function makeColorVariationCanvas(size) {
       const c = document.createElement('canvas');
       c.width = c.height = size;
       const ctx = c.getContext('2d');
-      ctx.fillStyle = '#9aa0a6';  // neutral mid
+      ctx.fillStyle = '#3e3f42';  // dark iron base
       ctx.fillRect(0, 0, size, size);
 
-      // A few large smooth tints (warm browns and cool blues)
+      // Cool / cool-warm drift tints — keep it heavy and industrial, no warm rust.
       const tints = [
-        'rgba(155,140,120,0.22)', // warm tan (rust/oil tint)
-        'rgba(130,145,165,0.18)', // cool blue (oxidation)
-        'rgba(170,165,150,0.15)', // dust
+        'rgba(50,55,60,0.28)',     // deeper cool patches
+        'rgba(80,85,90,0.18)',     // slightly lighter cool drift
+        'rgba(60,58,55,0.18)',     // very subtle warm graphite
       ];
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 8; i++) {
         const x = Math.random() * size;
         const y = Math.random() * size;
-        const r = size * 0.25 + Math.random() * size * 0.35;
+        const r = size * 0.28 + Math.random() * size * 0.4;
         const tint = tints[Math.floor(Math.random() * tints.length)];
         const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
         grad.addColorStop(0, tint);
-        grad.addColorStop(1, 'rgba(154,160,166,0)');
+        grad.addColorStop(1, 'rgba(62,63,66,0)');
         ctx.fillStyle = grad;
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
@@ -371,18 +371,17 @@
     colorTex.repeat.set(REPEAT_X, REPEAT_Y);
     colorTex.colorSpace = THREE.SRGBColorSpace;
 
-    // Construction-grade steel — satin finish, well-used tool surface.
-    // Slightly lower metalness (0.92) gives a small diffuse component which
-    // breaks the "perfect-CGI-mirror" feel.
+    // Cast iron / forged steel — dark, heavy, matte. Low metalness +
+    // high roughness reads as solid hand-forged metal, not shiny.
     const material = new THREE.MeshPhysicalMaterial({
-      color: 0xa0a4a8,
+      color: 0x4a4d50,            // dark iron
       map: colorTex,
-      metalness: 0.92,
-      roughness: 0.55,
+      metalness: 0.78,             // iron-ish, not pure-mirror
+      roughness: 0.78,             // matte cast finish
       roughnessMap: roughnessTex,
       normalMap: normalTex,
-      normalScale: new THREE.Vector2(0.5, 0.5),
-      envMapIntensity: 1.0,
+      normalScale: new THREE.Vector2(0.65, 0.65),
+      envMapIntensity: 0.55,       // low — iron doesn't mirror brightly
     });
 
     const innerGroup = new THREE.Group();
