@@ -280,28 +280,91 @@
       if (e.key === 'm' || e.key === 'M') cyclePreset();
     });
 
-    // -- Crack animation: every 25-45s briefly flash a thin crack across the
-    // logo, then fade out over 1.5s. Implemented as a thin black plane
-    // parented to LOGOGROUP (not innerGroup, so it rotates with the spin but
-    // doesn't get the SVG Y-flip rotation that would put it behind the logo).
-    const crackGeo = new THREE.PlaneGeometry(900, 3);
+    // -- Crack animation --
+    // Procedurally drawn jagged crack with branches (looks like real glass/metal
+    // fracture, not a 2D line). Drawn into a canvas using recursive midpoint
+    // displacement, used as alphaMap on a transparent plane parented to the
+    // logo. Visible 5s at full opacity, then fades over 2s. New crack texture
+    // generated each cycle so it's never the same shape twice.
+    const CRACK_TEX_W = 1024;
+    const CRACK_TEX_H = 512;
+
+    function generateCrackCanvas() {
+      const c = document.createElement('canvas');
+      c.width = CRACK_TEX_W;
+      c.height = CRACK_TEX_H;
+      const ctx = c.getContext('2d');
+      // Black background so the alphaMap shows the crack as opaque
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, CRACK_TEX_W, CRACK_TEX_H);
+
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#fff';   // white = visible in alphaMap
+
+      function drawJaggedLine(x0, y0, x1, y1, width, depth, branchProb) {
+        if (depth <= 0 || (Math.abs(x1-x0) < 6 && Math.abs(y1-y0) < 6)) {
+          ctx.lineWidth = Math.max(0.5, width);
+          ctx.beginPath();
+          ctx.moveTo(x0, y0);
+          ctx.lineTo(x1, y1);
+          ctx.stroke();
+          return;
+        }
+        // Midpoint displacement perpendicular to segment direction
+        const dx = x1 - x0, dy = y1 - y0;
+        const len = Math.hypot(dx, dy);
+        const nx = -dy / len, ny = dx / len;   // unit normal
+        const offset = (Math.random() - 0.5) * len * 0.18;
+        const mx = (x0 + x1) / 2 + nx * offset;
+        const my = (y0 + y1) / 2 + ny * offset;
+        drawJaggedLine(x0, y0, mx, my, width, depth - 1, branchProb);
+        drawJaggedLine(mx, my, x1, y1, width * 0.95, depth - 1, branchProb);
+        // Random branch
+        if (Math.random() < branchProb && depth > 2) {
+          const angle = Math.atan2(ny, nx) + (Math.random() - 0.5) * 1.2;
+          const bLen = len * (0.25 + Math.random() * 0.35);
+          const bx = mx + Math.cos(angle) * bLen;
+          const by = my + Math.sin(angle) * bLen;
+          drawJaggedLine(mx, my, bx, by, width * 0.55, depth - 2, branchProb * 0.5);
+        }
+      }
+
+      // Main crack across the canvas, slight angle
+      const angle = (Math.random() - 0.5) * 0.4;
+      const cy = CRACK_TEX_H / 2 + (Math.random() - 0.5) * CRACK_TEX_H * 0.3;
+      const startX = 50;
+      const startY = cy - Math.tan(angle) * (CRACK_TEX_W / 2 - 50);
+      const endX = CRACK_TEX_W - 50;
+      const endY = cy + Math.tan(angle) * (CRACK_TEX_W / 2 - 50);
+      drawJaggedLine(startX, startY, endX, endY, 5, 7, 0.45);
+
+      // Slight highlight along one edge — gives the crack visual depth
+      // (suggests a 3D chip catching light on its facet)
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.lineWidth = 1;
+      drawJaggedLine(startX + 2, startY - 1, endX + 2, endY - 1, 1, 6, 0.2);
+
+      return c;
+    }
+
+    const crackGeo = new THREE.PlaneGeometry(1200, 600);
     const crackMat = new THREE.MeshBasicMaterial({
-      color: 0x000000,
+      color: 0x080808,           // very dark — reads as crevice shadow
       transparent: true,
       opacity: 0,
       side: THREE.DoubleSide,
-      depthTest: false,           // render on top regardless of depth
+      depthTest: false,
       depthWrite: false,
+      alphaMap: new THREE.CanvasTexture(generateCrackCanvas()),
     });
     const crackMesh = new THREE.Mesh(crackGeo, crackMat);
     crackMesh.renderOrder = 999;
-    crackMesh.position.set(0, 0, 80);  // clearly in front of the logo
+    crackMesh.position.set(0, 0, 80);
     logoGroup.add(crackMesh);
 
     let crackState = 'idle';
     let crackT0 = 0;
-    // First crack appears 8-12s after load (so the user sees it without waiting forever)
-    let nextCrackAt = performance.now() + 8000 + Math.random() * 4000;
+    let nextCrackAt = performance.now() + 6000 + Math.random() * 4000;
 
     // -- Ambient particles (atmospheric drift) --
     // 80 tiny white dots drifting slowly in the scene. Adds atmosphere
@@ -488,29 +551,36 @@
       }
 
       // Crack animation cycle
+      // Lifecycle: 0.5s fade-in → 5s hold → 2s fade-out (total ~7.5s)
       const now = performance.now();
       if (crackState === 'idle' && now >= nextCrackAt) {
-        // Start a new crack
         crackState = 'showing';
         crackT0 = now;
-        // Random orientation in the logo's local XY plane
-        crackMesh.rotation.z = Math.random() * Math.PI;
-        crackMesh.position.x = (Math.random() - 0.5) * 300;
-        crackMesh.position.y = (Math.random() - 0.5) * 150;
+        // Generate a fresh crack texture for this cycle (never same shape twice)
+        crackMat.alphaMap.image = generateCrackCanvas();
+        crackMat.alphaMap.needsUpdate = true;
+        // Random small rotation/position offset within the logo
+        crackMesh.rotation.z = (Math.random() - 0.5) * 0.3;
+        crackMesh.position.x = (Math.random() - 0.5) * 100;
+        crackMesh.position.y = (Math.random() - 0.5) * 60;
       }
       if (crackState === 'showing') {
-        const ct = (now - crackT0) / 1500;  // 1.5s total
-        if (ct >= 1) {
-          crackMat.opacity = 0;
-          crackState = 'idle';
-          nextCrackAt = now + 25000 + Math.random() * 20000;
+        const elapsed = (now - crackT0) / 1000;  // seconds
+        const FADE_IN = 0.5, HOLD = 5.0, FADE_OUT = 2.0;
+        const PEAK = 0.85;
+        let opacity;
+        if (elapsed < FADE_IN) {
+          opacity = (elapsed / FADE_IN) * PEAK;
+        } else if (elapsed < FADE_IN + HOLD) {
+          opacity = PEAK;
+        } else if (elapsed < FADE_IN + HOLD + FADE_OUT) {
+          opacity = PEAK * (1 - (elapsed - FADE_IN - HOLD) / FADE_OUT);
         } else {
-          // Fade in then out: peak at t=0.25
-          const peak = 0.85;
-          crackMat.opacity = ct < 0.25
-            ? (ct / 0.25) * peak
-            : (1 - (ct - 0.25) / 0.75) * peak;
+          opacity = 0;
+          crackState = 'idle';
+          nextCrackAt = now + 18000 + Math.random() * 15000;
         }
+        crackMat.opacity = opacity;
       }
 
       parallaxX += (parallaxTargetX - parallaxX) * 0.05;
