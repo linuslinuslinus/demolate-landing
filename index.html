@@ -153,15 +153,14 @@
       c.width = c.height = size;
       const ctx = c.getContext('2d');
 
-      // Base — mid gray (satin steel)
+      // Base — satin steel
       ctx.fillStyle = '#8a8a8a';
       ctx.fillRect(0, 0, size, size);
 
-      // Layer 1: fine micro-grain (film-grain-like noise across whole surface).
-      // Tiny 1px specks with low alpha give the surface tooth without scratches.
+      // Layer 1: per-pixel micro-grain (the tooth of metal)
       const grainImg = ctx.createImageData(size, size);
       for (let i = 0; i < grainImg.data.length; i += 4) {
-        const v = 138 + (Math.random() - 0.5) * 22;  // ±11 around 138 (close to base)
+        const v = 138 + (Math.random() - 0.5) * 18;
         grainImg.data[i] = v;
         grainImg.data[i + 1] = v;
         grainImg.data[i + 2] = v;
@@ -169,15 +168,17 @@
       }
       ctx.putImageData(grainImg, 0, 0);
 
-      // Layer 2: subtle wear patches (much fainter than before — soft mottling).
-      for (let i = 0; i < 28; i++) {
+      // Layer 2: large smooth wear zones (slow drift). Use very large
+      // radial gradients to create organic light/dark continents across the tile.
+      // These are the "this corner has more wear than that one" patterns.
+      for (let i = 0; i < 8; i++) {
         const x = Math.random() * size;
         const y = Math.random() * size;
-        const r = 60 + Math.random() * 220;
+        const r = size * 0.35 + Math.random() * size * 0.3;
         const dark = Math.random() < 0.5;
         const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-        grad.addColorStop(0, dark ? 'rgba(80,80,80,0.22)' : 'rgba(200,200,200,0.18)');
-        grad.addColorStop(0.6, dark ? 'rgba(100,100,100,0.10)' : 'rgba(180,180,180,0.08)');
+        grad.addColorStop(0, dark ? 'rgba(95,95,95,0.20)' : 'rgba(190,190,190,0.18)');
+        grad.addColorStop(0.7, 'rgba(128,128,128,0.04)');
         grad.addColorStop(1, 'rgba(128,128,128,0)');
         ctx.fillStyle = grad;
         ctx.beginPath();
@@ -185,51 +186,93 @@
         ctx.fill();
       }
 
-      // Layer 3: HIGH-DENSITY fine micro-scratches (mostly short, mostly subtle).
-      // ~2200 hairline marks. Random angles. Variable opacity. This is the
-      // dominant character of a well-used construction-grade tool.
-      ctx.lineCap = 'round';
-      ctx.globalCompositeOperation = 'source-over';
-      for (let i = 0; i < 2200; i++) {
-        const x = Math.random() * size;
-        const y = Math.random() * size;
-        const angle = Math.random() * Math.PI * 2;
-        const len = 2 + Math.random() * 14;  // very short: 2-16px
-        const dark = Math.random() < 0.62;
-        const alpha = 0.05 + Math.random() * 0.18;  // soft
-        ctx.strokeStyle = dark
-          ? `rgba(45,45,45,${alpha})`
-          : `rgba(225,225,225,${alpha})`;
-        ctx.lineWidth = 0.4 + Math.random() * 0.6;  // hairline
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
-        ctx.stroke();
-      }
-
-      // Layer 4: rare larger scratches (the occasional heavier mark).
+      // Layer 3: medium-scale wear patches (mottled, organic)
       for (let i = 0; i < 22; i++) {
         const x = Math.random() * size;
         const y = Math.random() * size;
-        const angle = Math.random() * Math.PI * 2;
-        const len = 25 + Math.random() * 60;
-        const alpha = 0.15 + Math.random() * 0.2;
-        ctx.strokeStyle = Math.random() < 0.5
+        const r = 50 + Math.random() * 140;
+        const dark = Math.random() < 0.5;
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+        grad.addColorStop(0, dark ? 'rgba(75,75,75,0.18)' : 'rgba(205,205,205,0.15)');
+        grad.addColorStop(0.6, 'rgba(128,128,128,0.06)');
+        grad.addColorStop(1, 'rgba(128,128,128,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Layer 4: polished worn-through spots (where the surface has been
+      // rubbed smooth — high-contact areas like edges and grip points).
+      // These read as SHINIER (darker on the roughness map = lower roughness).
+      for (let i = 0; i < 14; i++) {
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const rx = 20 + Math.random() * 80;
+        const ry = rx * (0.4 + Math.random() * 0.5);  // elliptical, like a contact zone
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, Math.max(rx, ry));
+        grad.addColorStop(0, 'rgba(60,60,60,0.28)');
+        grad.addColorStop(0.5, 'rgba(80,80,80,0.12)');
+        grad.addColorStop(1, 'rgba(128,128,128,0)');
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(Math.random() * Math.PI);
+        ctx.scale(rx / Math.max(rx, ry), ry / Math.max(rx, ry));
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(0, 0, Math.max(rx, ry), 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Layer 5: hairline micro-scratches (the dominant fine detail).
+      // 1400 strokes, very short (was 2200, dialed back density).
+      // Slight bias toward horizontal direction (40% chance) for hand-tool feel
+      // (where a wrench gets dragged across a vise jaw in a roughly consistent line).
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 1400; i++) {
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const horiz = Math.random() < 0.4;
+        const angle = horiz
+          ? (Math.random() - 0.5) * 0.4         // near-horizontal ±0.2rad
+          : Math.random() * Math.PI * 2;
+        const len = 3 + Math.random() * 16;
+        const dark = Math.random() < 0.6;
+        const alpha = 0.05 + Math.random() * 0.16;
+        ctx.strokeStyle = dark
           ? `rgba(50,50,50,${alpha})`
           : `rgba(220,220,220,${alpha})`;
-        ctx.lineWidth = 0.6 + Math.random() * 0.6;
+        ctx.lineWidth = 0.4 + Math.random() * 0.5;
         ctx.beginPath();
         ctx.moveTo(x, y);
         ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
         ctx.stroke();
       }
 
-      // Layer 5: small dings / pits (tiny dark dots — chipped paint, gouges)
-      for (let i = 0; i < 90; i++) {
+      // Layer 6: rare larger scratches (still kept rare and subtle)
+      for (let i = 0; i < 14; i++) {
         const x = Math.random() * size;
         const y = Math.random() * size;
-        const r = 1 + Math.random() * 2.5;
-        ctx.fillStyle = `rgba(35,35,35,${0.3 + Math.random() * 0.3})`;
+        const angle = Math.random() * Math.PI * 2;
+        const len = 18 + Math.random() * 50;
+        const alpha = 0.12 + Math.random() * 0.16;
+        ctx.strokeStyle = Math.random() < 0.55
+          ? `rgba(55,55,55,${alpha})`
+          : `rgba(215,215,215,${alpha})`;
+        ctx.lineWidth = 0.5 + Math.random() * 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+        ctx.stroke();
+      }
+
+      // Layer 7: small dings + pits
+      for (let i = 0; i < 110; i++) {
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const r = 0.8 + Math.random() * 2.2;
+        ctx.fillStyle = `rgba(40,40,40,${0.25 + Math.random() * 0.3})`;
         ctx.beginPath();
         ctx.arc(x, y, r, 0, Math.PI * 2);
         ctx.fill();
@@ -237,6 +280,37 @@
 
       return c;
     }
+
+    // Subtle color-variation canvas (warm/cool drift across the surface)
+    function makeColorVariationCanvas(size) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#9aa0a6';  // neutral mid
+      ctx.fillRect(0, 0, size, size);
+
+      // A few large smooth tints (warm browns and cool blues)
+      const tints = [
+        'rgba(155,140,120,0.22)', // warm tan (rust/oil tint)
+        'rgba(130,145,165,0.18)', // cool blue (oxidation)
+        'rgba(170,165,150,0.15)', // dust
+      ];
+      for (let i = 0; i < 10; i++) {
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const r = size * 0.25 + Math.random() * size * 0.35;
+        const tint = tints[Math.floor(Math.random() * tints.length)];
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+        grad.addColorStop(0, tint);
+        grad.addColorStop(1, 'rgba(154,160,166,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      return c;
+    }
+    const colorCanvas = makeColorVariationCanvas(TEX_SIZE);
 
     const weatheredCanvas = makeWeatheredCanvas(TEX_SIZE);
     // Extract grayscale heights from canvas for normal-map derivation
@@ -299,17 +373,21 @@
     normalTex.repeat.set(REPEAT_X, REPEAT_Y);
     normalTex.colorSpace = THREE.NoColorSpace;
 
+    const colorTex = new THREE.CanvasTexture(colorCanvas);
+    colorTex.wrapS = colorTex.wrapT = THREE.RepeatWrapping;
+    colorTex.repeat.set(REPEAT_X, REPEAT_Y);
+    colorTex.colorSpace = THREE.SRGBColorSpace;
+
     // Construction-grade steel — satin finish, well-used tool surface.
-    // Base roughness 0.55 (satin, not chrome-polished). Map adds micro-grain
-    // variation. Slightly cooler color shift, less mirror-like.
     const material = new THREE.MeshPhysicalMaterial({
-      color: 0x787d82,            // satin steel
+      color: 0xa0a4a8,            // brighter base so the color-tint map can darken naturally
+      map: colorTex,               // subtle warm/cool color variation across surface
       metalness: 1.0,
-      roughness: 0.55,             // satin, not glossy
+      roughness: 0.5,
       roughnessMap: roughnessTex,
       normalMap: normalTex,
-      normalScale: new THREE.Vector2(0.4, 0.4),  // subtler bump
-      envMapIntensity: 1.15,
+      normalScale: new THREE.Vector2(0.4, 0.4),
+      envMapIntensity: 1.2,
     });
 
     const innerGroup = new THREE.Group();
