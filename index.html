@@ -39,10 +39,7 @@
       opacity: 0;
       animation: enter 1.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s forwards;
     }
-
-    @keyframes enter {
-      to { opacity: 1; }
-    }
+    @keyframes enter { to { opacity: 1; } }
 
     .meta {
       position: fixed;
@@ -56,16 +53,10 @@
       font-family: 'Archivo Black', monospace;
       z-index: 10;
     }
-
     .meta--left { left: 1.5rem; }
-    .meta--right {
-      right: 1.5rem;
-      display: flex;
-      gap: 1rem;
-    }
+    .meta--right { right: 1.5rem; display: flex; gap: 1rem; }
     .meta a { color: #fff; text-decoration: none; }
     .meta a:hover { background: #fff; color: #000; }
-
     @keyframes fade-in { to { opacity: 1; } }
 
     @media (max-width: 640px) {
@@ -73,7 +64,6 @@
       .meta--left { left: 1rem; }
       .meta--right { right: 1rem; gap: 0.75rem; }
     }
-
     @media (prefers-reduced-motion: reduce) {
       html, body { cursor: default; }
     }
@@ -85,10 +75,7 @@
       align-items: center;
       justify-content: center;
     }
-    noscript .fallback-logo img {
-      width: min(58vw, 58vh);
-      fill: #fff;
-    }
+    noscript .fallback-logo img { width: min(58vw, 58vh); }
   </style>
 </head>
 <body>
@@ -119,251 +106,141 @@
   <script type="module">
     import * as THREE from 'three';
     import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
-    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
     import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
     import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
     const canvas = document.getElementById('stage');
     const renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
-      alpha: true,
+      alpha: false,
     });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000, 1);
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
 
     const scene = new THREE.Scene();
 
-    // Generate a procedural studio environment (PMREM-encoded) for proper
-    // reflections + ambient bounce on PBR materials. No external HDR fetch.
-    const pmremGenerator = new THREE.PMREMGenerator(renderer);
-    scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
-
-    // Perspective camera. We push the camera back far enough that the
-    // logo fills ~58% of the smaller viewport dimension.
     const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 5000);
     camera.position.set(0, 0, 1200);
 
-    // Low ambient so shadows in the bumps stay dark.
-    scene.add(new THREE.AmbientLight(0xffffff, 0.12));
-
-    // Hard grazing key light from upper-right at low angle. Grazing angle
-    // is what makes normal-map bumps cast visible micro-shadows on the surface.
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
-    keyLight.position.set(800, 350, 600);
+    // Lighting — KEEP THIS WORKING. Don't dial ambient below 0.4 or the surface
+    // goes black on dark background.
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    keyLight.position.set(400, 600, 800);
     scene.add(keyLight);
-
-    // Cooler fill from lower-left to keep the silhouette legible.
-    const fillLight = new THREE.DirectionalLight(0xb8c4e0, 0.45);
-    fillLight.position.set(-600, -200, 300);
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.55);
+    fillLight.position.set(-500, -300, 400);
     scene.add(fillLight);
 
-    // Rim from behind for silhouette pop during rotation.
-    const rimLight = new THREE.DirectionalLight(0xffffff, 0.7);
-    rimLight.position.set(0, 200, -800);
-    scene.add(rimLight);
-
-    // -- Procedural concrete textures --
-    // Generate normalMap + roughnessMap via Canvas2D so we don't ship
-    // multi-MB texture files. Tileable noise → bumpy industrial concrete feel.
-    // Grid-cell Worley noise: each grid cell has one random point, each pixel
-    // only checks the 9 neighboring cells. Much faster than full voronoi.
-    // Produces tileable concrete-aggregate heightmap with cracks between cells.
-    function makeConcreteHeightmap(size) {
-      const heights = new Float32Array(size * size);
-      const gridSize = 64;          // 64px cells → ~16x16 grid for 1024 tex
-      const cellsPerSide = Math.ceil(size / gridSize);
-      // Each grid cell: random point offset + height
-      const cells = new Float32Array(cellsPerSide * cellsPerSide * 3);
-      for (let i = 0; i < cellsPerSide * cellsPerSide; i++) {
-        cells[i * 3] = Math.random();
-        cells[i * 3 + 1] = Math.random();
-        cells[i * 3 + 2] = 0.55 + Math.random() * 0.45;
+    // -- Procedural concrete textures (heightmap → normalMap + roughnessMap) --
+    const TEX_SIZE = 512;
+    function makeHeights(size) {
+      const h = new Float32Array(size * size);
+      // Worley grid noise: each grid cell has 1 point. Cellular pattern = aggregate.
+      const grid = 32;
+      const cps = Math.ceil(size / grid);
+      const cells = new Float32Array(cps * cps * 3);
+      for (let i = 0; i < cps * cps; i++) {
+        cells[i*3] = Math.random();
+        cells[i*3+1] = Math.random();
+        cells[i*3+2] = 0.5 + Math.random() * 0.5;
       }
-
       for (let y = 0; y < size; y++) {
-        const gy = Math.floor(y / gridSize);
+        const gy = Math.floor(y / grid);
         for (let x = 0; x < size; x++) {
-          const gx = Math.floor(x / gridSize);
-          let f1 = Infinity, f2 = Infinity, nearH = 0;
-          // Check 9 cells (current + 8 neighbors), tile-wrapped
-          for (let dy = -1; dy <= 1; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-              const cx = ((gx + dx) % cellsPerSide + cellsPerSide) % cellsPerSide;
-              const cy = ((gy + dy) % cellsPerSide + cellsPerSide) % cellsPerSide;
-              const cellIdx = (cy * cellsPerSide + cx) * 3;
-              // Point absolute position (cell origin + offset)
-              let px = (gx + dx) * gridSize + cells[cellIdx] * gridSize;
-              let py = (gy + dy) * gridSize + cells[cellIdx + 1] * gridSize;
-              const ddx = px - x;
-              const ddy = py - y;
-              const d = Math.sqrt(ddx * ddx + ddy * ddy);
-              if (d < f1) { f2 = f1; f1 = d; nearH = cells[cellIdx + 2]; }
-              else if (d < f2) { f2 = d; }
-            }
+          const gx = Math.floor(x / grid);
+          let f1 = Infinity, f2 = Infinity, nh = 0;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            const cx = ((gx+dx)%cps+cps)%cps;
+            const cy = ((gy+dy)%cps+cps)%cps;
+            const ci = (cy*cps+cx)*3;
+            const px = (gx+dx)*grid + cells[ci]*grid;
+            const py = (gy+dy)*grid + cells[ci+1]*grid;
+            const d = Math.hypot(px-x, py-y);
+            if (d < f1) { f2 = f1; f1 = d; nh = cells[ci+2]; }
+            else if (d < f2) { f2 = d; }
           }
-          // f2-f1 small → near cell border → low height (creates visible cracks).
-          const edge = Math.min(1, (f2 - f1) / 8);
-          const cellHeight = nearH * (0.3 + 0.7 * edge);
-
-          // Fine grit
-          const grit = Math.random() * 0.15;
-
-          // Sparse dark pits
-          let pit = 0;
-          if (Math.random() < 0.005) pit = -0.55;
-
-          let v = cellHeight + grit + pit;
-          heights[y * size + x] = Math.min(1, Math.max(0, v));
+          const edge = Math.min(1, (f2 - f1) / 6);
+          let v = nh * (0.4 + 0.6 * edge) + Math.random() * 0.15;
+          if (Math.random() < 0.005) v -= 0.5;
+          h[y*size+x] = Math.min(1, Math.max(0, v));
         }
       }
-      return heights;
+      return h;
     }
 
-    // Render a heightmap (Float32Array) to a grayscale canvas.
-    function heightToCanvas(heights, size) {
-      const c = document.createElement('canvas');
-      c.width = c.height = size;
-      const ctx = c.getContext('2d');
-      const img = ctx.createImageData(size, size);
-      for (let i = 0; i < heights.length; i++) {
-        const px = heights[i] * 255;
-        img.data[i * 4] = px;
-        img.data[i * 4 + 1] = px;
-        img.data[i * 4 + 2] = px;
-        img.data[i * 4 + 3] = 255;
+    const heights = makeHeights(TEX_SIZE);
+
+    // Render heightmap as grayscale CanvasTexture (used for roughness modulation)
+    const heightCanvas = document.createElement('canvas');
+    heightCanvas.width = heightCanvas.height = TEX_SIZE;
+    const hctx = heightCanvas.getContext('2d');
+    const himg = hctx.createImageData(TEX_SIZE, TEX_SIZE);
+    for (let i = 0; i < heights.length; i++) {
+      const px = heights[i] * 255;
+      himg.data[i*4] = px;
+      himg.data[i*4+1] = px;
+      himg.data[i*4+2] = px;
+      himg.data[i*4+3] = 255;
+    }
+    hctx.putImageData(himg, 0, 0);
+
+    // Sobel-derived normal map from heightmap
+    const normalCanvas = document.createElement('canvas');
+    normalCanvas.width = normalCanvas.height = TEX_SIZE;
+    const nctx = normalCanvas.getContext('2d');
+    const nimg = nctx.createImageData(TEX_SIZE, TEX_SIZE);
+    const at = (x, y) => heights[((y+TEX_SIZE)%TEX_SIZE)*TEX_SIZE + ((x+TEX_SIZE)%TEX_SIZE)] * 255;
+    for (let y = 0; y < TEX_SIZE; y++) {
+      for (let x = 0; x < TEX_SIZE; x++) {
+        const dx = (at(x+1,y-1)+2*at(x+1,y)+at(x+1,y+1)) - (at(x-1,y-1)+2*at(x-1,y)+at(x-1,y+1));
+        const dy = (at(x-1,y+1)+2*at(x,y+1)+at(x+1,y+1)) - (at(x-1,y-1)+2*at(x,y-1)+at(x+1,y-1));
+        const dz = 100;
+        const len = Math.hypot(dx, dy, dz) || 1;
+        const i = (y*TEX_SIZE+x)*4;
+        nimg.data[i] = ((dx/len)*0.5+0.5)*255;
+        nimg.data[i+1] = ((dy/len)*0.5+0.5)*255;
+        nimg.data[i+2] = ((dz/len)*0.5+0.5)*255;
+        nimg.data[i+3] = 255;
       }
-      ctx.putImageData(img, 0, 0);
-      return c;
     }
-
-    // Sobel-derived normal map from heightmap directly (more accurate than canvas roundtrip).
-    function heightToNormalCanvas(heights, size, strength = 1.0) {
-      const dst = document.createElement('canvas');
-      dst.width = dst.height = size;
-      const dctx = dst.getContext('2d');
-      const img = dctx.createImageData(size, size);
-      const at = (x, y) => heights[((y + size) % size) * size + ((x + size) % size)] * 255;
-      for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-          // Sobel
-          const tl = at(x - 1, y - 1), t = at(x, y - 1), tr = at(x + 1, y - 1);
-          const l = at(x - 1, y), r = at(x + 1, y);
-          const bl = at(x - 1, y + 1), b = at(x, y + 1), br = at(x + 1, y + 1);
-          const dx = ((tr + 2 * r + br) - (tl + 2 * l + bl)) * strength;
-          const dy = ((bl + 2 * b + br) - (tl + 2 * t + tr)) * strength;
-          const dz = 100;
-          const len = Math.hypot(dx, dy, dz) || 1;
-          const i = (y * size + x) * 4;
-          img.data[i]     = ((dx / len) * 0.5 + 0.5) * 255;
-          img.data[i + 1] = ((dy / len) * 0.5 + 0.5) * 255;
-          img.data[i + 2] = ((dz / len) * 0.5 + 0.5) * 255;
-          img.data[i + 3] = 255;
-        }
-      }
-      dctx.putImageData(img, 0, 0);
-      return dst;
-    }
-
-    function canvasToNormalMap(srcCanvas, strength = 1.0) {
-      const size = srcCanvas.width;
-      const sctx = srcCanvas.getContext('2d');
-      const srcImg = sctx.getImageData(0, 0, size, size);
-      const dst = document.createElement('canvas');
-      dst.width = dst.height = size;
-      const dctx = dst.getContext('2d');
-      const dstImg = dctx.createImageData(size, size);
-      const idx = (x, y) => (((y + size) % size) * size + ((x + size) % size)) * 4;
-      for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-          const tl = srcImg.data[idx(x - 1, y - 1)];
-          const t  = srcImg.data[idx(x, y - 1)];
-          const tr = srcImg.data[idx(x + 1, y - 1)];
-          const l  = srcImg.data[idx(x - 1, y)];
-          const r  = srcImg.data[idx(x + 1, y)];
-          const bl = srcImg.data[idx(x - 1, y + 1)];
-          const b  = srcImg.data[idx(x, y + 1)];
-          const br = srcImg.data[idx(x + 1, y + 1)];
-          // Sobel
-          const dx = (tr + 2 * r + br) - (tl + 2 * l + bl);
-          const dy = (bl + 2 * b + br) - (tl + 2 * t + tr);
-          const dz = 255 / strength;
-          // Normalize
-          const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
-          const i = (y * size + x) * 4;
-          dstImg.data[i]     = ((dx / len) * 0.5 + 0.5) * 255;
-          dstImg.data[i + 1] = ((dy / len) * 0.5 + 0.5) * 255;
-          dstImg.data[i + 2] = ((dz / len) * 0.5 + 0.5) * 255;
-          dstImg.data[i + 3] = 255;
-        }
-      }
-      dctx.putImageData(dstImg, 0, 0);
-      return dst;
-    }
-
-    // Build the concrete heightmap + derive normal + roughness + albedo canvases
-    const TEX_SIZE = 1024;
-    const heights = makeConcreteHeightmap(TEX_SIZE);
-    const heightCanvas = heightToCanvas(heights, TEX_SIZE);
-    const normalCanvas = heightToNormalCanvas(heights, TEX_SIZE, 1.0);
+    nctx.putImageData(nimg, 0, 0);
 
     const roughnessTex = new THREE.CanvasTexture(heightCanvas);
     roughnessTex.wrapS = roughnessTex.wrapT = THREE.RepeatWrapping;
-    roughnessTex.repeat.set(6, 3);
+    roughnessTex.repeat.set(8, 4);
     roughnessTex.colorSpace = THREE.NoColorSpace;
 
     const normalTex = new THREE.CanvasTexture(normalCanvas);
     normalTex.wrapS = normalTex.wrapT = THREE.RepeatWrapping;
-    normalTex.repeat.set(6, 3);
+    normalTex.repeat.set(8, 4);
     normalTex.colorSpace = THREE.NoColorSpace;
 
-    // Use heightmap as a subtle albedo variation too
-    const albedoTex = new THREE.CanvasTexture(heightCanvas);
-    albedoTex.wrapS = albedoTex.wrapT = THREE.RepeatWrapping;
-    albedoTex.repeat.set(6, 3);
-    albedoTex.colorSpace = THREE.SRGBColorSpace;
+    // Material — keep base color bright so logo stays visible. Texture adds
+    // surface variation through roughness + normal maps only.
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xf2efe9,           // off-white concrete
+      roughness: 0.7,            // matte
+      metalness: 0.0,
+      roughnessMap: roughnessTex,
+      normalMap: normalTex,
+      normalScale: new THREE.Vector2(1.0, 1.0),
+    });
 
-    console.log('[demolate] concrete textures generated', TEX_SIZE, 'px @ 6x3 repeat');
-
-    // Logo SVG embedded inline so SVGLoader can parse without an extra fetch.
-    const svgString = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1003.09 470.89">
-<path d="m459.39,47.59C432.21,19.64,394.56,1.93,352.73.76c-2.86-.05-5.78.58-8.4,1.75L11.79,150.46c-7.13,3.2-11.79,10.34-11.79,18.2v134.37c0,7.81,4.66,14.94,11.79,18.14l332.54,147.96c2.62,1.21,5.54,1.84,8.4,1.75,83.61-2.33,150.62-70.8,150.62-154.95v-160.18c0-42.07-16.74-80.26-43.96-108.16Zm-111.03,210.31c0,32.07-25.96,58.03-58.03,58.03h-115.45c-10.96,0-19.84-8.92-19.84-19.89v-120.44c0-10.97,8.88-19.85,19.84-19.85h116.71c31.34,0,56.77,25.38,56.77,56.73v45.42Z"/>
-<path d="m998.85,328.79l-311.97,138.79c-3.69,1.65-7.67,2.52-11.75,2.52h-6.69c-78.52,0-142.18-63.67-142.18-142.18v-176.54C526.26,70.1,590.21,3.82,670.57.03c4.47-.19,8.98.63,13.06,2.43l314.88,138.73c7.08,3.11,4.85,13.69-2.91,13.69h-272.04c-23.34,0-42.26,18.92-42.26,42.31v75.6c0,23.35,18.92,42.27,42.26,42.27h272.38c7.71,0,9.94,10.58,2.91,13.73Z"/>
-</svg>`;
-
-    const loader = new SVGLoader();
-    const data = loader.parse(svgString);
-
-    // Two nested groups:
-    //  - innerGroup applies the SVG Y-down → Three.js Y-up flip via rotation
-    //    (NOT via geometry.scale(1,-1,1), which reverses face winding and
-    //    breaks normals, leaving the mesh effectively invisible against the
-    //    dark background under MeshStandardMaterial lighting).
-    //  - logoGroup is the parent the scroll handler rotates on Y.
     const innerGroup = new THREE.Group();
     const logoGroup = new THREE.Group();
     logoGroup.add(innerGroup);
 
-    // Physical material — cast concrete look.
-    const material = new THREE.MeshPhysicalMaterial({
-      color: 0xc8c4ba,           // darker concrete-gray; lets the highlights and shadow detail breathe
-      map: albedoTex,
-      roughness: 0.92,
-      metalness: 0.0,
-      roughnessMap: roughnessTex,
-      normalMap: normalTex,
-      normalScale: new THREE.Vector2(2.5, 2.5),    // aggressive bump
-      envMapIntensity: 0.3,
-      clearcoat: 0.0,
-    });
+    const loader = new SVGLoader();
+    const data = loader.parse(`<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1003.09 470.89">
+<path d="m459.39,47.59C432.21,19.64,394.56,1.93,352.73.76c-2.86-.05-5.78.58-8.4,1.75L11.79,150.46c-7.13,3.2-11.79,10.34-11.79,18.2v134.37c0,7.81,4.66,14.94,11.79,18.14l332.54,147.96c2.62,1.21,5.54,1.84,8.4,1.75,83.61-2.33,150.62-70.8,150.62-154.95v-160.18c0-42.07-16.74-80.26-43.96-108.16Zm-111.03,210.31c0,32.07-25.96,58.03-58.03,58.03h-115.45c-10.96,0-19.84-8.92-19.84-19.89v-120.44c0-10.97,8.88-19.85,19.84-19.85h116.71c31.34,0,56.77,25.38,56.77,56.73v45.42Z"/>
+<path d="m998.85,328.79l-311.97,138.79c-3.69,1.65-7.67,2.52-11.75,2.52h-6.69c-78.52,0-142.18-63.67-142.18-142.18v-176.54C526.26,70.1,590.21,3.82,670.57.03c4.47-.19,8.98.63,13.06,2.43l314.88,138.73c7.08,3.11,4.85,13.69-2.91,13.69h-272.04c-23.34,0-42.26,18.92-42.26,42.31v75.6c0,23.35,18.92,42.27,42.26,42.27h272.38c7.71,0,9.94,10.58,2.91,13.73Z"/>
+</svg>`);
 
-    // Extrude each path into a real 3D mesh with depth.
     const extrudeSettings = {
       depth: 110,
       bevelEnabled: true,
@@ -374,83 +251,39 @@
     };
 
     data.paths.forEach((path) => {
-      const shapes = SVGLoader.createShapes(path);
-      shapes.forEach((shape) => {
+      SVGLoader.createShapes(path).forEach((shape) => {
         const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
         geometry.computeVertexNormals();
-        const mesh = new THREE.Mesh(geometry, material);
-        innerGroup.add(mesh);
+        innerGroup.add(new THREE.Mesh(geometry, material));
       });
     });
 
-    // Flip Y via rotation (preserves face winding + normals).
     innerGroup.rotation.x = Math.PI;
-    // Apply the matrices so bbox math below sees the flipped geometry.
     logoGroup.updateMatrixWorld(true);
-
-    // Center the whole logoGroup on the scene origin.
     const bbox = new THREE.Box3().setFromObject(logoGroup);
     const center = new THREE.Vector3();
     bbox.getCenter(center);
-    // Center by translating innerGroup (so logoGroup's local origin stays at 0,0,0
-    // and our scroll-driven Y rotation pivots around the logo center).
     innerGroup.position.sub(center);
-
     scene.add(logoGroup);
 
-    // Diagnostics: log path/mesh counts so we can confirm parsing worked.
-    console.log('[demolate] SVG paths parsed:', data.paths.length, '· meshes added:', innerGroup.children.length);
+    console.log('[demolate] paths:', data.paths.length, 'meshes:', innerGroup.children.length);
 
-    // -- Post-processing pipeline --
-    // RenderPass -> UnrealBloomPass (subtle, makes white edges glow gently)
-    // -> Vignette ShaderPass -> OutputPass
+    // Post-processing
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
-
     const bloomPass = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.08,  // strength — barely there, just a hint of glow on the brightest spots
+      0.1,   // strength — minimal
       0.6,   // radius
-      0.92   // threshold — only the absolute brightest pixels bloom
+      0.92   // threshold — only brightest highlights
     );
     composer.addPass(bloomPass);
-
-    // Custom vignette shader pass: subtle dark corners, focus on center.
-    const vignettePass = new ShaderPass({
-      uniforms: {
-        tDiffuse: { value: null },
-        offset: { value: 1.05 },
-        darkness: { value: 1.4 },
-      },
-      vertexShader: `
-        varying vec2 vUv;
-        void main() {
-          vUv = uv;
-          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-      `,
-      fragmentShader: `
-        uniform sampler2D tDiffuse;
-        uniform float offset;
-        uniform float darkness;
-        varying vec2 vUv;
-        void main() {
-          vec4 texel = texture2D(tDiffuse, vUv);
-          vec2 uv = (vUv - 0.5) * vec2(offset);
-          float vig = 1.0 - dot(uv, uv) * darkness;
-          gl_FragColor = vec4(texel.rgb * vig, texel.a);
-        }
-      `,
-    });
-    composer.addPass(vignettePass);
     composer.addPass(new OutputPass());
 
-    // Wheel + drag-driven endless rotation. Page itself doesn't scroll
-    // (overflow: hidden); we capture wheel/touch deltas and accumulate them
-    // into targetRot so the logo spins forever without any scrollbar.
+    // Wheel + drag-driven endless rotation (no scrolling)
     let targetRot = 0;
     let currentRot = 0;
-    const WHEEL_SENSITIVITY = 0.0035;
+    const WHEEL_SENSITIVITY = 0.003;
     const DRAG_SENSITIVITY = 0.008;
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -459,7 +292,6 @@
       targetRot += e.deltaY * WHEEL_SENSITIVITY;
     }, { passive: false });
 
-    // Touch + mouse drag to rotate
     let dragging = false;
     let dragStartX = 0;
     let dragStartRot = 0;
@@ -477,20 +309,19 @@
       dragging = false;
       document.body.classList.remove('grabbing');
     }
-    window.addEventListener('mousedown', (e) => startDrag(e.clientX));
+    canvas.addEventListener('mousedown', (e) => startDrag(e.clientX));
     window.addEventListener('mousemove', (e) => moveDrag(e.clientX));
     window.addEventListener('mouseup', endDrag);
-    window.addEventListener('mouseleave', endDrag);
-    window.addEventListener('touchstart', (e) => startDrag(e.touches[0].clientX), { passive: true });
+    canvas.addEventListener('touchstart', (e) => startDrag(e.touches[0].clientX), { passive: true });
     window.addEventListener('touchmove', (e) => moveDrag(e.touches[0].clientX), { passive: true });
     window.addEventListener('touchend', endDrag);
 
-    // Subtle mouse-parallax: scene tilts slightly toward cursor
+    // Mouse parallax (subtle scene tilt)
     let parallaxX = 0, parallaxY = 0;
     let parallaxTargetX = 0, parallaxTargetY = 0;
     window.addEventListener('mousemove', (e) => {
       if (dragging) return;
-      parallaxTargetX = (e.clientX / window.innerWidth - 0.5) * 2;   // -1 to 1
+      parallaxTargetX = (e.clientX / window.innerWidth - 0.5) * 2;
       parallaxTargetY = (e.clientY / window.innerHeight - 0.5) * 2;
     }, { passive: true });
 
@@ -501,8 +332,6 @@
       composer.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-
-      // Fit logo into ~58% of the smaller viewport dimension.
       const fovRad = camera.fov * Math.PI / 180;
       const visibleHeight = 2 * Math.tan(fovRad / 2) * camera.position.z;
       const visibleWidth = visibleHeight * camera.aspect;
@@ -513,19 +342,15 @@
     }
     window.addEventListener('resize', resize, { passive: true });
     resize();
-    updateScroll();
 
     function animate() {
-      // Smooth-follow rotation
       currentRot += (targetRot - currentRot) * 0.12;
       logoGroup.rotation.y = prefersReducedMotion ? 0 : currentRot;
 
-      // Mouse parallax lerp
-      parallaxX += (parallaxTargetX - parallaxX) * 0.06;
-      parallaxY += (parallaxTargetY - parallaxY) * 0.06;
+      parallaxX += (parallaxTargetX - parallaxX) * 0.05;
+      parallaxY += (parallaxTargetY - parallaxY) * 0.05;
       if (!prefersReducedMotion) {
-        logoGroup.rotation.x = parallaxY * 0.12;
-        logoGroup.position.x = parallaxX * 18;
+        logoGroup.rotation.x = parallaxY * 0.1;
       }
 
       composer.render();
