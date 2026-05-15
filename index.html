@@ -149,221 +149,63 @@
     // very mild roughness variation, anisotropic reflection on the material.
     const TEX_SIZE = 1024;
 
-    function valueNoise2D(size, octaves = 5, scaleStart = 8) {
-      const result = new Float32Array(size * size);
-      let amp = 1, totalAmp = 0;
-      let scaleBase = scaleStart;
-      for (let o = 0; o < octaves; o++) {
-        totalAmp += amp;
-        const cells = Math.ceil(size / scaleBase);
-        const cw = cells + 1;
-        const cellVals = new Float32Array(cw * cw);
-        for (let i = 0; i < cellVals.length; i++) cellVals[i] = Math.random();
-        for (let y = 0; y < size; y++) {
-          for (let x = 0; x < size; x++) {
-            const fx = x / scaleBase, fy = y / scaleBase;
-            const ix = Math.floor(fx), iy = Math.floor(fy);
-            const tx = fx - ix, ty = fy - iy;
-            const a = cellVals[iy * cw + ix];
-            const b = cellVals[iy * cw + ix + 1];
-            const c = cellVals[(iy + 1) * cw + ix];
-            const d = cellVals[(iy + 1) * cw + ix + 1];
-            const sx = tx * tx * (3 - 2 * tx);
-            const sy = ty * ty * (3 - 2 * ty);
-            const top = a * (1 - sx) + b * sx;
-            const bot = c * (1 - sx) + d * sx;
-            result[y * size + x] += amp * (top * (1 - sy) + bot * sy);
-          }
-        }
-        amp *= 0.55;
-        scaleBase = Math.max(2, Math.floor(scaleBase * 0.5));
+    // Build a horizontal-streaks heightmap: each row has a smoothly-varying
+    // baseline plus tiny per-pixel jitter. Rows DIFFER from each other to
+    // create the visible brushed grain. Looking along grain → uniform.
+    // Looking across grain → streaks of light/dark.
+    const heights = new Float32Array(TEX_SIZE * TEX_SIZE);
+    for (let y = 0; y < TEX_SIZE; y++) {
+      // Slow row drift + per-row offset
+      const slow = Math.sin(y * 0.03) * 0.04 + Math.cos(y * 0.011) * 0.02;
+      const rowBase = 0.55 + slow + (Math.random() - 0.5) * 0.05;
+      for (let x = 0; x < TEX_SIZE; x++) {
+        // Tiny per-pixel jitter along X (coherent streaks since adjacent x's
+        // get small differences, but rows have larger differences)
+        const jitter = (Math.random() - 0.5) * 0.04;
+        let v = rowBase + jitter;
+        // Occasional darker scratch line (single pixel)
+        if (Math.random() < 0.0005) v -= 0.12;
+        heights[y * TEX_SIZE + x] = Math.min(1, Math.max(0, v));
       }
-      for (let i = 0; i < result.length; i++) result[i] /= totalAmp;
-      return result;
     }
 
-    // Macro patches noise (large warm clouds — start with big cells so the
-    // logo shows distinct broad patches rather than uniform speckle).
-    const rustNoise = valueNoise2D(TEX_SIZE, 4, 64);
-    // Big cloudy wear field — broad light/dark areas like ref2's mottling.
-    const cloudNoise = valueNoise2D(TEX_SIZE, 5, 160);
-    // Mid-scale blotch noise — for ref2's irregular dark/light splotches.
-    const blotchNoise = valueNoise2D(TEX_SIZE, 3, 32);
-    // Fine micro-grain for surface variation (close-up character).
-    const fineNoise = valueNoise2D(TEX_SIZE, 3, 4);
-
-    // RUST MASK — soft threshold: top ~30% of noise produces warm tint.
-    const rustMask = new Float32Array(TEX_SIZE * TEX_SIZE);
-    for (let i = 0; i < rustMask.length; i++) {
-      let v = (rustNoise[i] - 0.52) * 2.6;
-      v = Math.min(1, Math.max(0, v));
-      v = v * v * (3 - 2 * v);
-      rustMask[i] = v;
-    }
-
-    // ALBEDO: dark charcoal iron with cloudy wear and very subtle warm hint patches.
+    // ALBEDO: subtle horizontal brushed streaks on a cool-silver base.
     const colorCanvas = document.createElement('canvas');
     colorCanvas.width = colorCanvas.height = TEX_SIZE;
     const actx = colorCanvas.getContext('2d');
     const aimg = actx.createImageData(TEX_SIZE, TEX_SIZE);
-    for (let i = 0; i < rustMask.length; i++) {
-      const m = rustMask[i];
-      const cloud = cloudNoise[i];   // 0..1 broad cloudy wear field
-      const blotch = blotchNoise[i]; // 0..1 mid-scale splotches
-      const fine = fineNoise[i];     // 0..1 fine grain field
-
-      // Base iron — dark charcoal with strong cloudy mottling. Ref2 has a wide
-      // tonal range from near-black recesses to almost-bright highlights.
-      // Combine broad clouds with mid blotches for ref2's organic patchy look.
-      let c = (cloud - 0.5) * 2;             // -1..1 broad
-      const bl = (blotch - 0.5) * 2;         // -1..1 mid
-      // Asymmetric S-curve: stretches midtones, keeps deep darks/bright peaks.
-      let mottle = c * 0.7 + bl * 0.4;
-      mottle = Math.tanh(mottle * 1.4);      // -1..1 with softer ends
-      const shift = mottle * 26;             // narrower tonal band — ref2 is uniformly mid-dark
-      let r = 70 + shift;
-      let g = 72 + shift;
-      let b = 76 + shift;
-
-      // Warm hint patches — subtle brown-stain tint, never pure orange.
-      // Just nudges hue toward warm in the rust mask areas.
-      if (m > 0) {
-        let rR, rG, rB;
-        if (m < 0.55) {
-          // Faint stain
-          const t = m / 0.55;
-          rR = 95 + t * 25;   // 95 → 120
-          rG = 78 + t * 10;   // 78 → 88
-          rB = 66 + t * 0;    // 66 → 66
-        } else {
-          // Stronger stain (still muted)
-          const t = (m - 0.55) / 0.45;
-          rR = 120 - t * 22;  // 120 → 98
-          rG = 88 - t * 22;   // 88 → 66
-          rB = 66 - t * 18;   // 66 → 48
-        }
-        // SOFT alpha blend — tint, not replace (brief: max 10%).
-        const alpha = m * 0.10;
-        r = r * (1 - alpha) + rR * alpha;
-        g = g * (1 - alpha) + rG * alpha;
-        b = b * (1 - alpha) + rB * alpha;
-      }
-
-      // Fine micro-grain modulation (helps with the photographic feel)
-      const fineShift = (fine - 0.5) * 4;
-      r += fineShift;
-      g += fineShift;
-      b += fineShift;
-
-      // Per-pixel pepper grain (kept low so it doesn't look like sandpaper)
-      const grain = (Math.random() - 0.5) * 3;
+    for (let i = 0; i < heights.length; i++) {
+      const v = heights[i];
+      // Cool silver: shift around #c0c4c8, range tight (~±20)
+      const shift = (v - 0.55) * 50;
+      const r = 196 + shift;
+      const g = 200 + shift;
+      const b = 206 + shift;
       const px = i * 4;
-      aimg.data[px]     = Math.max(0, Math.min(255, r + grain));
-      aimg.data[px + 1] = Math.max(0, Math.min(255, g + grain));
-      aimg.data[px + 2] = Math.max(0, Math.min(255, b + grain));
+      aimg.data[px]     = Math.max(0, Math.min(255, r));
+      aimg.data[px + 1] = Math.max(0, Math.min(255, g));
+      aimg.data[px + 2] = Math.max(0, Math.min(255, b));
       aimg.data[px + 3] = 255;
     }
     actx.putImageData(aimg, 0, 0);
 
-    // FINE SCRATCH OVERLAY — VERY sparse. Ref2 has no obvious scratches; we add
-    // only a few faint hairlines to suggest tool-mark character up close,
-    // staying well below the threshold that would make it look like ref3.
-    actx.save();
-    const NUM_SCRATCHES = 90;
-    for (let s = 0; s < NUM_SCRATCHES; s++) {
-      const x0 = Math.random() * TEX_SIZE;
-      const y0 = Math.random() * TEX_SIZE;
-      const baseAngle = (Math.random() < 0.5) ? 0.25 : -0.35;
-      const ang = baseAngle + (Math.random() - 0.5) * 1.2;
-      const len = 30 + Math.random() * Math.random() * 220;
-      const x1 = x0 + Math.cos(ang) * len;
-      const y1 = y0 + Math.sin(ang) * len;
-      const bright = Math.random() < 0.5;
-      const a = 0.04 + Math.random() * 0.06;
-      actx.globalCompositeOperation = bright ? 'lighter' : 'multiply';
-      actx.strokeStyle = bright
-        ? `rgba(190, 195, 200, ${a})`
-        : `rgba(14, 16, 20, ${a + 0.04})`;
-      actx.lineWidth = 0.5 + Math.random() * 0.8;
-      actx.beginPath();
-      actx.moveTo(x0, y0);
-      const mx = (x0 + x1) / 2 + (Math.random() - 0.5) * 8;
-      const my = (y0 + y1) / 2 + (Math.random() - 0.5) * 8;
-      actx.quadraticCurveTo(mx, my, x1, y1);
-      actx.stroke();
-    }
-    // Dark pits — ref2 has scattered tiny dark spots.
-    actx.globalCompositeOperation = 'multiply';
-    for (let p = 0; p < 350; p++) {
-      const x = Math.random() * TEX_SIZE;
-      const y = Math.random() * TEX_SIZE;
-      const r = 0.4 + Math.random() * 1.6;
-      actx.fillStyle = `rgba(15, 17, 20, ${0.18 + Math.random() * 0.28})`;
-      actx.beginPath();
-      actx.arc(x, y, r, 0, Math.PI * 2);
-      actx.fill();
-    }
-    // A few larger soft dark blotches like ref2's deeper recesses.
-    actx.globalCompositeOperation = 'multiply';
-    for (let p = 0; p < 18; p++) {
-      const x = Math.random() * TEX_SIZE;
-      const y = Math.random() * TEX_SIZE;
-      const radius = 40 + Math.random() * 90;
-      const grad = actx.createRadialGradient(x, y, 0, x, y, radius);
-      grad.addColorStop(0, `rgba(40, 42, 46, ${0.45 + Math.random() * 0.2})`);
-      grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-      actx.fillStyle = grad;
-      actx.beginPath();
-      actx.arc(x, y, radius, 0, Math.PI * 2);
-      actx.fill();
-    }
-    // A few soft warm-brown wash blotches (ref2 has these scattered).
-    actx.globalCompositeOperation = 'multiply';
-    for (let p = 0; p < 14; p++) {
-      const x = Math.random() * TEX_SIZE;
-      const y = Math.random() * TEX_SIZE;
-      const radius = 50 + Math.random() * 110;
-      const grad = actx.createRadialGradient(x, y, 0, x, y, radius);
-      grad.addColorStop(0, `rgba(110, 92, 78, ${0.18 + Math.random() * 0.12})`);
-      grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-      actx.fillStyle = grad;
-      actx.beginPath();
-      actx.arc(x, y, radius, 0, Math.PI * 2);
-      actx.fill();
-    }
-    actx.restore();
-
-    // ROUGHNESS: mostly mid (worn metal sheen — not chalky, not mirror).
-    // Lower base so the surface catches some specular highlights.
+    // ROUGHNESS: tight range, mid-low. Slight variation along the brushed grain.
     const weatheredCanvas = document.createElement('canvas');
     weatheredCanvas.width = weatheredCanvas.height = TEX_SIZE;
     const rctx = weatheredCanvas.getContext('2d');
     const rimg = rctx.createImageData(TEX_SIZE, TEX_SIZE);
-    for (let i = 0; i < rustMask.length; i++) {
-      let rough = 0.56
-                + 0.07 * rustMask[i]            // rust → rougher
-                + (cloudNoise[i] - 0.5) * 0.07  // cloud variation: light spots = smoother
-                + (fineNoise[i] - 0.5) * 0.03;  // fine variation
-      rough += (Math.random() - 0.5) * 0.02;
+    for (let i = 0; i < heights.length; i++) {
+      // Base 0.32 (semi-polished steel), +/- small variation from heightmap
+      let rough = 0.32 + (heights[i] - 0.55) * 0.18;
       rough = Math.min(1, Math.max(0, rough));
       const px = i * 4;
-      const v = rough * 255;
-      rimg.data[px] = v;
-      rimg.data[px + 1] = v;
-      rimg.data[px + 2] = v;
+      const val = rough * 255;
+      rimg.data[px] = val;
+      rimg.data[px + 1] = val;
+      rimg.data[px + 2] = val;
       rimg.data[px + 3] = 255;
     }
     rctx.putImageData(rimg, 0, 0);
-
-    // HEIGHTS for normal map: gentle surface variation (avoid stoney feel).
-    const heights = new Float32Array(TEX_SIZE * TEX_SIZE);
-    for (let i = 0; i < rustMask.length; i++) {
-      heights[i] = Math.min(1, Math.max(0,
-          fineNoise[i] * 0.08
-          + rustMask[i] * 0.20
-          + Math.random() * 0.04
-          + 0.15));
-    }
 
     // Sobel-derived normal map from heightmap
     const normalCanvas = document.createElement('canvas');
@@ -408,18 +250,18 @@
     colorTex.repeat.set(REPEAT_X, REPEAT_Y);
     colorTex.colorSpace = THREE.SRGBColorSpace;
 
-    // Aged forged steel: base white so the albedo's charcoal + warm hints render true.
-    // metalness slightly lower so the surface reads as worked/oxidized steel
-    // rather than pristine mirror metal.
+    // Stainless steel — fully metallic, semi-polished, subtle brushed grain.
     const material = new THREE.MeshPhysicalMaterial({
       color: 0xffffff,
       map: colorTex,
-      metalness: 0.85,
-      roughness: 1.0,              // multiplied by roughnessMap
+      metalness: 1.0,
+      roughness: 1.0,              // multiplied by roughnessMap (real values come from the map)
       roughnessMap: roughnessTex,
       normalMap: normalTex,
-      normalScale: new THREE.Vector2(0.18, 0.18),
-      envMapIntensity: 0.95,
+      normalScale: new THREE.Vector2(0.18, 0.04),  // bumps along grain direction only
+      envMapIntensity: 1.6,         // bright reflections, chrome-like
+      anisotropy: 0.75,             // brushed metal directional reflection
+      anisotropyRotation: 0,        // horizontal grain
     });
 
     const innerGroup = new THREE.Group();
