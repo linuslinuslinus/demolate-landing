@@ -144,14 +144,12 @@
     scene.add(fillLight);
 
     // -- Real PBR textures from PolyHaven (CC0 license) --
-    // Procedural noise can't match the photographic feel of real PBR texture
-    // sets. PolyHaven serves CC0 maps via Cloudflare CDN with CORS open, so we
-    // can load them directly from the browser.
-    //
-    // Picked set: rusty_metal_sheet (bluish-gray painted steel, scratched,
-    // rust streaks, muted metallic sheen). Closest visual match to ref2.
-    const PH_BASE = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rusty_metal_sheet';
-    const PH_SLUG = 'rusty_metal_sheet';
+    // We use blue_metal_plate's SURFACE maps (normal, roughness, AO) for the
+    // scuffed/scratched character without rust, then DROP its diffuse map and
+    // tint the material with a neutral steel gray. Result: clean aged metal
+    // with surface character, no rust, no blue.
+    const PH_BASE = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/blue_metal_plate';
+    const PH_SLUG = 'blue_metal_plate';
 
     const texLoader = new THREE.TextureLoader();
     texLoader.crossOrigin = 'anonymous';
@@ -163,33 +161,31 @@
       return tex;
     }
 
-    const colorTex = loadPhTex('diff', THREE.SRGBColorSpace);
     const normalTex = loadPhTex('nor_gl', THREE.NoColorSpace);
     const roughnessTex = loadPhTex('rough', THREE.NoColorSpace);
     const aoTex = loadPhTex('ao', THREE.NoColorSpace);
+    // intentionally NO diffuse — we want flat gray, not painted blue
 
     // ExtrudeGeometry UVs are in shape coords (~0..1003, not normalized).
     // 1.0 tile across the logo width hides texture seams behind the edges.
     const TILES = 1.0;
     const REPEAT_X = TILES / 1003;
-    const REPEAT_Y = TILES / 1003;  // square sampling (PBR maps are square)
-    [colorTex, normalTex, roughnessTex, aoTex].forEach(t => {
+    const REPEAT_Y = TILES / 1003;
+    [normalTex, roughnessTex, aoTex].forEach(t => {
       t.repeat.set(REPEAT_X, REPEAT_Y);
     });
 
-    // Aged painted steel material. metalness/roughness inherent to the
-    // texture set; we multiply both by 1.0 so the maps drive the values.
+    // Clean aged steel — flat gray with the texture's scratch/scuff character.
     const material = new THREE.MeshPhysicalMaterial({
-      color: 0xffffff,
-      map: colorTex,
-      metalness: 1.0,
-      roughness: 1.0,
+      color: 0x9aa0a4,            // neutral steel gray
+      metalness: 0.95,
+      roughness: 1.0,              // multiplied by roughnessMap
       roughnessMap: roughnessTex,
       normalMap: normalTex,
-      normalScale: new THREE.Vector2(0.7, 0.7),
+      normalScale: new THREE.Vector2(0.6, 0.6),
       aoMap: aoTex,
-      aoMapIntensity: 1.0,
-      envMapIntensity: 1.0,
+      aoMapIntensity: 0.9,
+      envMapIntensity: 1.2,
     });
 
     const innerGroup = new THREE.Group();
