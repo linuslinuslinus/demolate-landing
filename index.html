@@ -270,27 +270,26 @@
     }
     actx.putImageData(aimg, 0, 0);
 
-    // SCRATCH OVERLAY — fine random scratches like ref3, vector-drawn on top.
-    // Use 'lighter' blending for bright hairlines and 'multiply' for dark gouges.
-    // Density is moderate: enough to feel weathered up close, not chaotic.
+    // FINE SCRATCH OVERLAY — VERY sparse. Ref2 has no obvious scratches; we add
+    // only a few faint hairlines to suggest tool-mark character up close,
+    // staying well below the threshold that would make it look like ref3.
     actx.save();
-    const NUM_SCRATCHES = 600;
+    const NUM_SCRATCHES = 90;
     for (let s = 0; s < NUM_SCRATCHES; s++) {
       const x0 = Math.random() * TEX_SIZE;
       const y0 = Math.random() * TEX_SIZE;
-      // Scratches mostly trend in 2-3 directions (tool marks) with jitter.
-      const baseAngle = (Math.random() < 0.5) ? 0.3 : -0.4;
-      const ang = baseAngle + (Math.random() - 0.5) * 1.6;
-      const len = 40 + Math.random() * Math.random() * 380;  // bias short, allow long
+      const baseAngle = (Math.random() < 0.5) ? 0.25 : -0.35;
+      const ang = baseAngle + (Math.random() - 0.5) * 1.2;
+      const len = 30 + Math.random() * Math.random() * 220;
       const x1 = x0 + Math.cos(ang) * len;
       const y1 = y0 + Math.sin(ang) * len;
-      const bright = Math.random() < 0.65;
-      const a = 0.10 + Math.random() * 0.20;
+      const bright = Math.random() < 0.5;
+      const a = 0.04 + Math.random() * 0.06;
       actx.globalCompositeOperation = bright ? 'lighter' : 'multiply';
       actx.strokeStyle = bright
-        ? `rgba(210, 215, 220, ${a})`
-        : `rgba(12, 14, 18, ${a + 0.10})`;
-      actx.lineWidth = 0.6 + Math.random() * 1.2;
+        ? `rgba(190, 195, 200, ${a})`
+        : `rgba(14, 16, 20, ${a + 0.04})`;
+      actx.lineWidth = 0.5 + Math.random() * 0.8;
       actx.beginPath();
       actx.moveTo(x0, y0);
       const mx = (x0 + x1) / 2 + (Math.random() - 0.5) * 8;
@@ -298,15 +297,43 @@
       actx.quadraticCurveTo(mx, my, x1, y1);
       actx.stroke();
     }
-    // A few small dark specks/pits (ref2 has these — small dark dots)
+    // Dark pits — ref2 has scattered tiny dark spots.
     actx.globalCompositeOperation = 'multiply';
-    for (let p = 0; p < 600; p++) {
+    for (let p = 0; p < 350; p++) {
       const x = Math.random() * TEX_SIZE;
       const y = Math.random() * TEX_SIZE;
       const r = 0.4 + Math.random() * 1.6;
-      actx.fillStyle = `rgba(15, 17, 20, ${0.25 + Math.random() * 0.35})`;
+      actx.fillStyle = `rgba(15, 17, 20, ${0.18 + Math.random() * 0.28})`;
       actx.beginPath();
       actx.arc(x, y, r, 0, Math.PI * 2);
+      actx.fill();
+    }
+    // A few larger soft dark blotches like ref2's deeper recesses.
+    actx.globalCompositeOperation = 'multiply';
+    for (let p = 0; p < 18; p++) {
+      const x = Math.random() * TEX_SIZE;
+      const y = Math.random() * TEX_SIZE;
+      const radius = 40 + Math.random() * 90;
+      const grad = actx.createRadialGradient(x, y, 0, x, y, radius);
+      grad.addColorStop(0, `rgba(40, 42, 46, ${0.45 + Math.random() * 0.2})`);
+      grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      actx.fillStyle = grad;
+      actx.beginPath();
+      actx.arc(x, y, radius, 0, Math.PI * 2);
+      actx.fill();
+    }
+    // A few soft warm-brown wash blotches (ref2 has these scattered).
+    actx.globalCompositeOperation = 'multiply';
+    for (let p = 0; p < 14; p++) {
+      const x = Math.random() * TEX_SIZE;
+      const y = Math.random() * TEX_SIZE;
+      const radius = 50 + Math.random() * 110;
+      const grad = actx.createRadialGradient(x, y, 0, x, y, radius);
+      grad.addColorStop(0, `rgba(110, 92, 78, ${0.18 + Math.random() * 0.12})`);
+      grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      actx.fillStyle = grad;
+      actx.beginPath();
+      actx.arc(x, y, radius, 0, Math.PI * 2);
       actx.fill();
     }
     actx.restore();
