@@ -6,7 +6,14 @@
   <meta name="description" content="Demolate Records">
   <meta property="og:title" content="Demolate Records">
   <meta property="og:description" content="DMLT001 — 05.06.2026">
-  <meta property="og:image" content="/assets/demolate-logo.svg">
+  <meta property="og:image" content="/assets/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="/assets/demolate-logo.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="/assets/favicon-64.png">
+  <link rel="apple-touch-icon" sizes="256x256" href="/assets/favicon-256.png">
   <title>Demolate Records</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -111,6 +118,7 @@
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
     import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
     const canvas = document.getElementById('stage');
     const renderer = new THREE.WebGLRenderer({
@@ -228,6 +236,60 @@
 
     console.log('[demolate] paths:', data.paths.length, 'meshes:', innerGroup.children.length);
 
+    // -- Material switcher (M key cycles materials) --
+    // Three preset looks: aged steel (default), polished silver, copper/bronze.
+    // Smooth tween between them over ~0.6s when M is pressed.
+    const MATERIAL_PRESETS = [
+      { name: 'aged-steel',    color: 0x9aa0a4, metalness: 0.95, roughness: 1.0,  normalScale: 0.6, envMapIntensity: 1.2 },
+      { name: 'polished',      color: 0xd2d5d8, metalness: 1.0,  roughness: 0.55, normalScale: 0.3, envMapIntensity: 1.8 },
+      { name: 'copper-bronze', color: 0xb47238, metalness: 1.0,  roughness: 0.85, normalScale: 0.7, envMapIntensity: 1.4 },
+    ];
+    let presetIdx = 0;
+    let tweenT0 = 0, tweenDur = 600;
+    let tweenFrom = null, tweenTo = null;
+
+    function cyclePreset() {
+      presetIdx = (presetIdx + 1) % MATERIAL_PRESETS.length;
+      tweenFrom = {
+        color: material.color.clone(),
+        metalness: material.metalness,
+        roughness: material.roughness,
+        normalScaleX: material.normalScale.x,
+        envMapIntensity: material.envMapIntensity,
+      };
+      const next = MATERIAL_PRESETS[presetIdx];
+      tweenTo = {
+        color: new THREE.Color(next.color),
+        metalness: next.metalness,
+        roughness: next.roughness,
+        normalScaleX: next.normalScale,
+        envMapIntensity: next.envMapIntensity,
+      };
+      tweenT0 = performance.now();
+    }
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'm' || e.key === 'M') cyclePreset();
+    });
+
+    // -- Crack animation: every 25-45s briefly flash a thin crack across the
+    // logo, then fade out over 1.5s. Implemented as a thin black plane sized
+    // to the logo bbox, parented to innerGroup so it rotates with the logo.
+    const crackGeo = new THREE.PlaneGeometry(800, 2);
+    const crackMat = new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const crackMesh = new THREE.Mesh(crackGeo, crackMat);
+    crackMesh.position.set(0, 0, 60);  // slightly in front of the logo's front face
+    innerGroup.add(crackMesh);
+
+    let crackState = 'idle';
+    let crackT0 = 0;
+    let nextCrackAt = performance.now() + 25000 + Math.random() * 20000;
+
     // -- Ambient particles (atmospheric drift) --
     // 80 tiny white dots drifting slowly in the scene. Adds atmosphere
     // without competing with the logo for attention.
@@ -267,6 +329,39 @@
       0.92   // threshold — only brightest highlights
     );
     composer.addPass(bloomPass);
+
+    // Chromatic aberration pass — intensity scales with rotation velocity.
+    // R sampled with +offset, B with -offset, G centered. Subtle at rest,
+    // visible during fast spin.
+    const caPass = new ShaderPass({
+      uniforms: {
+        tDiffuse: { value: null },
+        amount: { value: 0.0 },  // updated each frame from rotation velocity
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float amount;
+        varying vec2 vUv;
+        void main() {
+          // Direction radially outward from center (subtle)
+          vec2 dir = (vUv - 0.5) * amount;
+          float r = texture2D(tDiffuse, vUv + dir).r;
+          float g = texture2D(tDiffuse, vUv).g;
+          float b = texture2D(tDiffuse, vUv - dir).b;
+          float a = texture2D(tDiffuse, vUv).a;
+          gl_FragColor = vec4(r, g, b, a);
+        }
+      `,
+    });
+    composer.addPass(caPass);
+
     composer.addPass(new OutputPass());
 
     // Wheel + drag-driven endless rotation (no scrolling)
@@ -350,9 +445,60 @@
     window.addEventListener('resize', resize, { passive: true });
     resize();
 
+    let prevRot = 0;
     function animate() {
+      const prev = currentRot;
       currentRot += (targetRot - currentRot) * 0.12;
       logoGroup.rotation.y = prefersReducedMotion ? 0 : currentRot;
+
+      // Chromatic aberration intensity proportional to rotation velocity
+      const rotVel = Math.abs(currentRot - prev);
+      // Map velocity 0..0.2 rad/frame → CA amount 0..0.015
+      const caAmount = Math.min(0.015, rotVel * 0.075);
+      caPass.uniforms.amount.value = caAmount;
+
+      // Material tween (M-key cycling)
+      if (tweenTo && tweenFrom) {
+        const t = Math.min(1, (performance.now() - tweenT0) / tweenDur);
+        const k = t * t * (3 - 2 * t);  // smoothstep
+        material.color.r = tweenFrom.color.r + (tweenTo.color.r - tweenFrom.color.r) * k;
+        material.color.g = tweenFrom.color.g + (tweenTo.color.g - tweenFrom.color.g) * k;
+        material.color.b = tweenFrom.color.b + (tweenTo.color.b - tweenFrom.color.b) * k;
+        material.metalness = tweenFrom.metalness + (tweenTo.metalness - tweenFrom.metalness) * k;
+        material.roughness = tweenFrom.roughness + (tweenTo.roughness - tweenFrom.roughness) * k;
+        material.normalScale.set(
+          tweenFrom.normalScaleX + (tweenTo.normalScaleX - tweenFrom.normalScaleX) * k,
+          tweenFrom.normalScaleX + (tweenTo.normalScaleX - tweenFrom.normalScaleX) * k
+        );
+        material.envMapIntensity = tweenFrom.envMapIntensity + (tweenTo.envMapIntensity - tweenFrom.envMapIntensity) * k;
+        if (t >= 1) { tweenFrom = null; tweenTo = null; }
+      }
+
+      // Crack animation cycle
+      const now = performance.now();
+      if (crackState === 'idle' && now >= nextCrackAt) {
+        // Start a new crack
+        crackState = 'showing';
+        crackT0 = now;
+        // Random orientation in the logo's local XY plane
+        crackMesh.rotation.z = Math.random() * Math.PI;
+        crackMesh.position.x = (Math.random() - 0.5) * 300;
+        crackMesh.position.y = (Math.random() - 0.5) * 150;
+      }
+      if (crackState === 'showing') {
+        const ct = (now - crackT0) / 1500;  // 1.5s total
+        if (ct >= 1) {
+          crackMat.opacity = 0;
+          crackState = 'idle';
+          nextCrackAt = now + 25000 + Math.random() * 20000;
+        } else {
+          // Fade in then out: peak at t=0.25
+          const peak = 0.85;
+          crackMat.opacity = ct < 0.25
+            ? (ct / 0.25) * peak
+            : (1 - (ct - 0.25) / 0.75) * peak;
+        }
+      }
 
       parallaxX += (parallaxTargetX - parallaxX) * 0.05;
       parallaxY += (parallaxTargetY - parallaxY) * 0.05;
