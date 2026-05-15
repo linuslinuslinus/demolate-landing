@@ -225,7 +225,7 @@
       // Asymmetric S-curve: stretches midtones, keeps deep darks/bright peaks.
       let mottle = c * 0.7 + bl * 0.4;
       mottle = Math.tanh(mottle * 1.4);      // -1..1 with softer ends
-      const shift = mottle * 55;             // dark valleys -55, peaks +55
+      const shift = mottle * 26;             // narrower tonal band — ref2 is uniformly mid-dark
       let r = 70 + shift;
       let g = 72 + shift;
       let b = 76 + shift;
@@ -247,21 +247,21 @@
           rG = 88 - t * 22;   // 88 → 66
           rB = 66 - t * 18;   // 66 → 48
         }
-        // SOFT alpha blend — tint, not replace.
-        const alpha = m * 0.22;
+        // SOFT alpha blend — tint, not replace (brief: max 10%).
+        const alpha = m * 0.10;
         r = r * (1 - alpha) + rR * alpha;
         g = g * (1 - alpha) + rG * alpha;
         b = b * (1 - alpha) + rB * alpha;
       }
 
       // Fine micro-grain modulation (helps with the photographic feel)
-      const fineShift = (fine - 0.5) * 5;
+      const fineShift = (fine - 0.5) * 4;
       r += fineShift;
       g += fineShift;
       b += fineShift;
 
       // Per-pixel pepper grain (kept low so it doesn't look like sandpaper)
-      const grain = (Math.random() - 0.5) * 4;
+      const grain = (Math.random() - 0.5) * 3;
       const px = i * 4;
       aimg.data[px]     = Math.max(0, Math.min(255, r + grain));
       aimg.data[px + 1] = Math.max(0, Math.min(255, g + grain));
