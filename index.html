@@ -162,21 +162,24 @@
     const loader = new SVGLoader();
     const data = loader.parse(svgString);
 
-    // Group to hold all extruded path meshes.
-    // Anchor it slightly above scene origin to compensate for SVG y-down coords.
+    // Two nested groups:
+    //  - innerGroup applies the SVG Y-down → Three.js Y-up flip via rotation
+    //    (NOT via geometry.scale(1,-1,1), which reverses face winding and
+    //    breaks normals, leaving the mesh effectively invisible against the
+    //    dark background under MeshStandardMaterial lighting).
+    //  - logoGroup is the parent the scroll handler rotates on Y.
+    const innerGroup = new THREE.Group();
     const logoGroup = new THREE.Group();
+    logoGroup.add(innerGroup);
 
-    // Standard material — slight roughness reads as plastic/vinyl, fully white.
+    // Standard material — slight roughness reads as solid plastic, fully white.
     const material = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       roughness: 0.45,
       metalness: 0.05,
-      side: THREE.DoubleSide,
     });
 
     // Extrude each path into a real 3D mesh with depth.
-    // Depth = 110 (relative to SVG viewBox 1003 wide). Bevel adds subtle softness
-    // to the edges, which catches light nicely on rotation.
     const extrudeSettings = {
       depth: 110,
       bevelEnabled: true,
@@ -190,24 +193,29 @@
       const shapes = SVGLoader.createShapes(path);
       shapes.forEach((shape) => {
         const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-        // SVG uses Y-down, Three.js uses Y-up. Flip.
-        geometry.scale(1, -1, 1);
+        geometry.computeVertexNormals();
         const mesh = new THREE.Mesh(geometry, material);
-        logoGroup.add(mesh);
+        innerGroup.add(mesh);
       });
     });
 
-    // Compute group bounding box and center it on origin.
+    // Flip Y via rotation (preserves face winding + normals).
+    innerGroup.rotation.x = Math.PI;
+    // Apply the matrices so bbox math below sees the flipped geometry.
+    logoGroup.updateMatrixWorld(true);
+
+    // Center the whole logoGroup on the scene origin.
     const bbox = new THREE.Box3().setFromObject(logoGroup);
     const center = new THREE.Vector3();
     bbox.getCenter(center);
-    logoGroup.position.sub(center);
+    // Center by translating innerGroup (so logoGroup's local origin stays at 0,0,0
+    // and our scroll-driven Y rotation pivots around the logo center).
+    innerGroup.position.sub(center);
 
-    // Scale the group so the logo width fills ~58% of the camera view.
-    // The bbox width in SVG units is ~1003. The visible scene width at camera
-    // distance is derived from FOV. We'll set scale in resize() to keep it
-    // responsive.
     scene.add(logoGroup);
+
+    // Diagnostics: log path/mesh counts so we can confirm parsing worked.
+    console.log('[demolate] SVG paths parsed:', data.paths.length, '· meshes added:', innerGroup.children.length);
 
     // Scroll-driven rotation
     const TOTAL_ROTATION = Math.PI * 4; // 2 full revolutions across the scroll
