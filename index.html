@@ -143,32 +143,67 @@
     fillLight.position.set(-500, -300, 400);
     scene.add(fillLight);
 
-    // -- Brushed metal texture: horizontal linear grain --
-    // Each row has a base brightness + light per-pixel jitter. Looking down the
-    // grain (horizontally) you see clean, uniform reflection; across the grain
-    // (vertically) you see strong specular streaks. This is the brushed-metal
-    // signature.
+    // -- Weathered chrome / aged gunmetal texture --
+    // Reference look: polished metal with random scratches in all directions
+    // + cloudy wear patches + occasional bright spots where the surface is rubbed.
+    // Built procedurally on a 2D canvas (faster than per-pixel heightmap loops).
     const TEX_SIZE = 1024;
-    function makeBrushedHeights(size) {
-      const h = new Float32Array(size * size);
-      for (let y = 0; y < size; y++) {
-        // Pick a row base that varies smoothly along Y
-        // (small per-row jitter + slow drift for natural variation)
-        const slow = Math.sin(y * 0.04) * 0.06;
-        const rowBase = 0.55 + slow + (Math.random() - 0.5) * 0.10;
-        for (let x = 0; x < size; x++) {
-          // Per-pixel HORIZONTAL streaks: tiny variation that's coherent along X
-          const jitter = (Math.random() - 0.5) * 0.05;
-          let v = rowBase + jitter;
-          // Occasional darker scratch
-          if (Math.random() < 0.0007) v -= 0.18;
-          h[y * size + x] = Math.min(1, Math.max(0, v));
-        }
+    function makeWeatheredCanvas(size) {
+      const c = document.createElement('canvas');
+      c.width = c.height = size;
+      const ctx = c.getContext('2d');
+
+      // Base — mid gray (will modulate roughness around the material's base value)
+      ctx.fillStyle = '#888888';
+      ctx.fillRect(0, 0, size, size);
+
+      // Cloudy wear patches — darker and lighter blobs (areas where finish is worn through)
+      for (let i = 0; i < 55; i++) {
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const r = 40 + Math.random() * 180;
+        const dark = Math.random() < 0.5;
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+        const c1 = dark ? 'rgba(70,70,70,0.55)' : 'rgba(220,220,220,0.5)';
+        grad.addColorStop(0, c1);
+        grad.addColorStop(0.6, dark ? 'rgba(100,100,100,0.25)' : 'rgba(200,200,200,0.2)');
+        grad.addColorStop(1, 'rgba(128,128,128,0)');
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
       }
-      return h;
+
+      // Sharp directional scratches (the well-used metal look)
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 380; i++) {
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const angle = Math.random() * Math.PI * 2;
+        const len = 15 + Math.random() * 140;
+        const dark = Math.random() < 0.55;
+        const alpha = 0.18 + Math.random() * 0.5;
+        ctx.strokeStyle = dark
+          ? `rgba(40,40,40,${alpha})`
+          : `rgba(245,245,245,${alpha})`;
+        ctx.lineWidth = 0.4 + Math.random() * 1.4;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+        ctx.stroke();
+      }
+
+      return c;
     }
 
-    const heights = makeBrushedHeights(TEX_SIZE);
+    const weatheredCanvas = makeWeatheredCanvas(TEX_SIZE);
+    // Extract grayscale heights from canvas for normal-map derivation
+    const ___ictx = weatheredCanvas.getContext('2d');
+    const ___idata = ___ictx.getImageData(0, 0, TEX_SIZE, TEX_SIZE);
+    const heights = new Float32Array(TEX_SIZE * TEX_SIZE);
+    for (let i = 0; i < heights.length; i++) {
+      heights[i] = ___idata.data[i * 4] / 255;
+    }
 
     // Render heightmap as grayscale CanvasTexture (used for roughness modulation)
     const heightCanvas = document.createElement('canvas');
@@ -206,13 +241,13 @@
     nctx.putImageData(nimg, 0, 0);
 
     // ExtrudeGeometry UVs are in shape coords (~0..1003), not normalized.
-    // For brushed metal we want very stretched horizontal tiling so the grain
-    // looks long and continuous: ~4 tiles across width but only ~0.2 across the
-    // depth (so the grain runs the long way).
-    const REPEAT_X = 4 / 1003;
-    const REPEAT_Y = 60 / 471;  // dense vertically for many horizontal streaks
+    // For weathered chrome we want 2-3 visible tiles across the logo so the
+    // scratches and wear patches read at scene scale (not too fine, not too coarse).
+    const TILES = 2.5;
+    const REPEAT_X = TILES / 1003;
+    const REPEAT_Y = TILES / 471 * (471 / 1003);  // keep square-ish tiles given aspect
 
-    const roughnessTex = new THREE.CanvasTexture(heightCanvas);
+    const roughnessTex = new THREE.CanvasTexture(weatheredCanvas);
     roughnessTex.wrapS = roughnessTex.wrapT = THREE.RepeatWrapping;
     roughnessTex.repeat.set(REPEAT_X, REPEAT_Y);
     roughnessTex.colorSpace = THREE.NoColorSpace;
@@ -222,18 +257,17 @@
     normalTex.repeat.set(REPEAT_X, REPEAT_Y);
     normalTex.colorSpace = THREE.NoColorSpace;
 
-    // Brushed steel: highly metallic, mid-low roughness, cool silver tone.
-    // Environment map drives the reflections; the brushed grain modulates them.
+    // Weathered chrome / aged gunmetal — dark base, very metallic, varying
+    // roughness from the texture creates the "polished with scratches and worn
+    // spots" look.
     const material = new THREE.MeshPhysicalMaterial({
-      color: 0xc8ccd0,            // cool silver
-      metalness: 1.0,             // fully metallic
-      roughness: 0.42,             // semi-glossy
+      color: 0x6a6e72,            // dark gunmetal
+      metalness: 1.0,
+      roughness: 0.32,             // base is polished; map varies per pixel
       roughnessMap: roughnessTex,
       normalMap: normalTex,
-      normalScale: new THREE.Vector2(0.4, 0.05),  // streaky bump along X only
-      envMapIntensity: 1.4,
-      anisotropy: 0.85,           // strong directional reflection (the brushed-metal signature)
-      anisotropyRotation: 0,      // horizontal grain direction
+      normalScale: new THREE.Vector2(0.7, 0.7),
+      envMapIntensity: 1.8,        // strong env reflections for chrome character
     });
 
     const innerGroup = new THREE.Group();
