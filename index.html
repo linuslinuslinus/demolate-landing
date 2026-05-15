@@ -331,50 +331,76 @@
       c.width = CRACK_TEX_W;
       c.height = CRACK_TEX_H;
       const ctx = c.getContext('2d');
-      // WHITE background = solid logo (alphaTest passes)
+      // WHITE background = solid logo
       ctx.fillStyle = '#fff';
       ctx.fillRect(0, 0, CRACK_TEX_W, CRACK_TEX_H);
 
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = '#000';   // BLACK = punched-out hole
+      ctx.lineCap = 'butt';        // hard ends, not rounded — looks more like stone
+      ctx.lineJoin = 'miter';
+      ctx.miterLimit = 1.5;
 
-      function drawJaggedLine(x0, y0, x1, y1, width, depth, branchProb) {
-        if (depth <= 0 || (Math.abs(x1-x0) < 6 && Math.abs(y1-y0) < 6)) {
-          ctx.lineWidth = Math.max(1.5, width);
+      // Angular crack — many short straight segments at sharp angles.
+      // (Midpoint displacement gave SMOOTH wavy lines that read like a
+      // paper tear; stone cracks turn sharply, not in arcs.)
+      function drawAngularCrack(x0, y0, dirAngle, totalLen, startWidth) {
+        let cx = x0, cy = y0;
+        let curAngle = dirAngle;
+        let remaining = totalLen;
+        let width = startWidth;
+        ctx.strokeStyle = '#000';
+        while (remaining > 4) {
+          const segLen = 6 + Math.random() * 22;
+          curAngle += (Math.random() - 0.5) * 0.9;  // SHARP angle change
+          const nx = cx + Math.cos(curAngle) * segLen;
+          const ny = cy + Math.sin(curAngle) * segLen;
+          ctx.lineWidth = Math.max(1, width * (0.7 + Math.random() * 0.6)); // vary thickness
           ctx.beginPath();
-          ctx.moveTo(x0, y0);
-          ctx.lineTo(x1, y1);
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(nx, ny);
           ctx.stroke();
-          return;
+          cx = nx; cy = ny;
+          remaining -= segLen;
+          width *= 0.985;  // taper toward the end
         }
-        const dx = x1 - x0, dy = y1 - y0;
-        const len = Math.hypot(dx, dy);
-        const nx = -dy / len, ny = dx / len;
-        const offset = (Math.random() - 0.5) * len * 0.18;
-        const mx = (x0 + x1) / 2 + nx * offset;
-        const my = (y0 + y1) / 2 + ny * offset;
-        drawJaggedLine(x0, y0, mx, my, width, depth - 1, branchProb);
-        drawJaggedLine(mx, my, x1, y1, width * 0.95, depth - 1, branchProb);
-        if (Math.random() < branchProb && depth > 2) {
-          const angle = Math.atan2(ny, nx) + (Math.random() - 0.5) * 1.2;
-          const bLen = len * (0.25 + Math.random() * 0.35);
-          const bx = mx + Math.cos(angle) * bLen;
-          const by = my + Math.sin(angle) * bLen;
-          drawJaggedLine(mx, my, bx, by, width * 0.55, depth - 2, branchProb * 0.5);
+        return [cx, cy];   // return endpoint for branches
+      }
+
+      // Spawn 6-10 cracks scattered across the canvas (NOT one big edge-to-edge).
+      const CRACK_COUNT = 6 + Math.floor(Math.random() * 5);
+      // Bias away from exact center (0.5, 0.5) so side walls stay solid
+      function safePoint() {
+        let x, y;
+        do {
+          x = 60 + Math.random() * (CRACK_TEX_W - 120);
+          y = 30 + Math.random() * (CRACK_TEX_H - 60);
+        } while (Math.abs(x - CRACK_TEX_W/2) < 80 && Math.abs(y - CRACK_TEX_H/2) < 40);
+        return [x, y];
+      }
+
+      for (let i = 0; i < CRACK_COUNT; i++) {
+        const [sx, sy] = safePoint();
+        const angle = Math.random() * Math.PI * 2;
+        const len = 60 + Math.random() * 180;
+        const width = 2 + Math.random() * 3;
+        const [ex, ey] = drawAngularCrack(sx, sy, angle, len, width);
+
+        // Y-branch at the endpoint with ~50% chance
+        if (Math.random() < 0.5) {
+          const ba = angle + (Math.random() < 0.5 ? 0.6 : -0.6) + (Math.random() - 0.5) * 0.4;
+          drawAngularCrack(ex, ey, ba, len * (0.4 + Math.random() * 0.4), width * 0.7);
         }
       }
 
-      // Main crack — biased away from the exact center so side walls
-      // (which sample 0.5, 0.5) stay solid.
-      const angle = (Math.random() - 0.5) * 0.35;
-      // Put the crack in upper or lower 35% to avoid the center
-      const half = Math.random() < 0.5 ? -1 : 1;
-      const cy = CRACK_TEX_H * 0.5 + half * CRACK_TEX_H * (0.18 + Math.random() * 0.15);
-      const startX = 40;
-      const startY = cy - Math.tan(angle) * (CRACK_TEX_W / 2 - 40);
-      const endX = CRACK_TEX_W - 40;
-      const endY = cy + Math.tan(angle) * (CRACK_TEX_W / 2 - 40);
-      drawJaggedLine(startX, startY, endX, endY, 7, 7, 0.55);
+      // Add a few small "spall" fragments — tiny dots/blobs scattered around
+      // larger cracks that look like little pieces flaking off.
+      ctx.fillStyle = '#000';
+      for (let i = 0; i < 30; i++) {
+        const [x, y] = safePoint();
+        const r = 0.6 + Math.random() * 1.8;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       return c;
     }
