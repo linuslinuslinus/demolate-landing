@@ -83,9 +83,9 @@
 
   <div class="meta meta--left">DMLT001 · 05.06.2026</div>
   <div class="meta meta--right">
-    <a href="#" aria-label="Instagram">IG</a>
-    <a href="#" aria-label="Bandcamp">BC</a>
-    <a href="#" aria-label="SoundCloud">SC</a>
+    <a href="https://www.instagram.com/demolate.records/" target="_blank" rel="noopener" aria-label="Instagram">IG</a>
+    <a href="https://demolaterecords.bandcamp.com/" target="_blank" rel="noopener" aria-label="Bandcamp">BC</a>
+    <a href="https://soundcloud.com/demolate_records" target="_blank" rel="noopener" aria-label="SoundCloud">SC</a>
   </div>
 
   <noscript>
@@ -228,6 +228,35 @@
 
     console.log('[demolate] paths:', data.paths.length, 'meshes:', innerGroup.children.length);
 
+    // -- Ambient particles (atmospheric drift) --
+    // 80 tiny white dots drifting slowly in the scene. Adds atmosphere
+    // without competing with the logo for attention.
+    const PARTICLE_COUNT = 80;
+    const particleGeo = new THREE.BufferGeometry();
+    const positions = new Float32Array(PARTICLE_COUNT * 3);
+    const velocities = new Float32Array(PARTICLE_COUNT * 3);
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      // Spread across a volume in front of and behind the logo
+      positions[i * 3]     = (Math.random() - 0.5) * 1600;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * 900;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 400 - 100;
+      // Very slow random velocity
+      velocities[i * 3]     = (Math.random() - 0.5) * 0.25;
+      velocities[i * 3 + 1] = (Math.random() - 0.5) * 0.25;
+      velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.10;
+    }
+    particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const particleMat = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 2.5,
+      transparent: true,
+      opacity: 0.35,
+      sizeAttenuation: true,
+      depthWrite: false,
+    });
+    const particles = new THREE.Points(particleGeo, particleMat);
+    scene.add(particles);
+
     // Post-processing
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
@@ -255,17 +284,35 @@
     let dragging = false;
     let dragStartX = 0;
     let dragStartRot = 0;
+    let dragMoved = false;            // track if pointer actually moved during drag
     function startDrag(x) {
       dragging = true;
+      dragMoved = false;
       dragStartX = x;
       dragStartRot = targetRot;
       document.body.classList.add('grabbing');
     }
     function moveDrag(x) {
       if (!dragging) return;
+      if (Math.abs(x - dragStartX) > 5) dragMoved = true;
       targetRot = dragStartRot + (x - dragStartX) * DRAG_SENSITIVITY;
     }
     function endDrag() {
+      // If we never moved more than 5px, treat as a CLICK → fast 720° auto-spin
+      if (dragging && !dragMoved) {
+        const start = targetRot;
+        const end = targetRot + Math.PI * 4;
+        const t0 = performance.now();
+        const dur = 1200;
+        function spin() {
+          const t = (performance.now() - t0) / dur;
+          if (t >= 1) { targetRot = end; return; }
+          const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+          targetRot = start + (end - start) * eased;
+          requestAnimationFrame(spin);
+        }
+        requestAnimationFrame(spin);
+      }
       dragging = false;
       document.body.classList.remove('grabbing');
     }
@@ -311,6 +358,26 @@
       parallaxY += (parallaxTargetY - parallaxY) * 0.05;
       if (!prefersReducedMotion) {
         logoGroup.rotation.x = parallaxY * 0.1;
+      }
+
+      // Drift particles. Wrap them around when they leave the visible volume.
+      if (!prefersReducedMotion) {
+        const pos = particleGeo.attributes.position.array;
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+          pos[i * 3]     += velocities[i * 3];
+          pos[i * 3 + 1] += velocities[i * 3 + 1];
+          pos[i * 3 + 2] += velocities[i * 3 + 2];
+          // Wrap on X
+          if (pos[i * 3] > 800) pos[i * 3] = -800;
+          else if (pos[i * 3] < -800) pos[i * 3] = 800;
+          // Wrap on Y
+          if (pos[i * 3 + 1] > 450) pos[i * 3 + 1] = -450;
+          else if (pos[i * 3 + 1] < -450) pos[i * 3 + 1] = 450;
+          // Wrap on Z
+          if (pos[i * 3 + 2] > 200) pos[i * 3 + 2] = -300;
+          else if (pos[i * 3 + 2] < -300) pos[i * 3 + 2] = 200;
+        }
+        particleGeo.attributes.position.needsUpdate = true;
       }
 
       composer.render();
