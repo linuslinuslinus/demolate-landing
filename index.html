@@ -18,17 +18,17 @@
 
     html, body {
       width: 100%;
+      height: 100%;
       background: #000;
       color: #fff;
       font-family: 'Archivo Black', system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
+      overflow: hidden;
       overscroll-behavior: none;
+      cursor: grab;
     }
-
-    body {
-      /* 400vh of scroll = 2 full rotations */
-      height: 400vh;
-    }
+    body.grabbing { cursor: grabbing; }
+    body::-webkit-scrollbar { display: none; }
 
     canvas#stage {
       position: fixed;
@@ -75,7 +75,7 @@
     }
 
     @media (prefers-reduced-motion: reduce) {
-      body { height: 100vh; }
+      html, body { cursor: default; }
     }
 
     noscript .fallback-logo {
@@ -149,80 +149,125 @@
     const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 5000);
     camera.position.set(0, 0, 1200);
 
-    // Lower ambient + harder key light gives more contrast → grain reads better.
-    scene.add(new THREE.AmbientLight(0xffffff, 0.18));
+    // Low ambient so shadows in the bumps stay dark.
+    scene.add(new THREE.AmbientLight(0xffffff, 0.12));
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 1.4);
-    keyLight.position.set(500, 700, 900);
+    // Hard grazing key light from upper-right at low angle. Grazing angle
+    // is what makes normal-map bumps cast visible micro-shadows on the surface.
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.0);
+    keyLight.position.set(800, 350, 600);
     scene.add(keyLight);
 
-    const fillLight = new THREE.DirectionalLight(0xc8d4e8, 0.35);
+    // Cooler fill from lower-left to keep the silhouette legible.
+    const fillLight = new THREE.DirectionalLight(0xb8c4e0, 0.45);
     fillLight.position.set(-600, -200, 300);
     scene.add(fillLight);
 
-    // Rim light from behind for silhouette pop during rotation.
-    const rimLight = new THREE.DirectionalLight(0xffffff, 0.55);
+    // Rim from behind for silhouette pop during rotation.
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.7);
     rimLight.position.set(0, 200, -800);
     scene.add(rimLight);
 
     // -- Procedural concrete textures --
     // Generate normalMap + roughnessMap via Canvas2D so we don't ship
     // multi-MB texture files. Tileable noise → bumpy industrial concrete feel.
-    function makeNoiseCanvas(size) {
+    // Grid-cell Worley noise: each grid cell has one random point, each pixel
+    // only checks the 9 neighboring cells. Much faster than full voronoi.
+    // Produces tileable concrete-aggregate heightmap with cracks between cells.
+    function makeConcreteHeightmap(size) {
+      const heights = new Float32Array(size * size);
+      const gridSize = 64;          // 64px cells → ~16x16 grid for 1024 tex
+      const cellsPerSide = Math.ceil(size / gridSize);
+      // Each grid cell: random point offset + height
+      const cells = new Float32Array(cellsPerSide * cellsPerSide * 3);
+      for (let i = 0; i < cellsPerSide * cellsPerSide; i++) {
+        cells[i * 3] = Math.random();
+        cells[i * 3 + 1] = Math.random();
+        cells[i * 3 + 2] = 0.55 + Math.random() * 0.45;
+      }
+
+      for (let y = 0; y < size; y++) {
+        const gy = Math.floor(y / gridSize);
+        for (let x = 0; x < size; x++) {
+          const gx = Math.floor(x / gridSize);
+          let f1 = Infinity, f2 = Infinity, nearH = 0;
+          // Check 9 cells (current + 8 neighbors), tile-wrapped
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const cx = ((gx + dx) % cellsPerSide + cellsPerSide) % cellsPerSide;
+              const cy = ((gy + dy) % cellsPerSide + cellsPerSide) % cellsPerSide;
+              const cellIdx = (cy * cellsPerSide + cx) * 3;
+              // Point absolute position (cell origin + offset)
+              let px = (gx + dx) * gridSize + cells[cellIdx] * gridSize;
+              let py = (gy + dy) * gridSize + cells[cellIdx + 1] * gridSize;
+              const ddx = px - x;
+              const ddy = py - y;
+              const d = Math.sqrt(ddx * ddx + ddy * ddy);
+              if (d < f1) { f2 = f1; f1 = d; nearH = cells[cellIdx + 2]; }
+              else if (d < f2) { f2 = d; }
+            }
+          }
+          // f2-f1 small → near cell border → low height (creates visible cracks).
+          const edge = Math.min(1, (f2 - f1) / 8);
+          const cellHeight = nearH * (0.3 + 0.7 * edge);
+
+          // Fine grit
+          const grit = Math.random() * 0.15;
+
+          // Sparse dark pits
+          let pit = 0;
+          if (Math.random() < 0.005) pit = -0.55;
+
+          let v = cellHeight + grit + pit;
+          heights[y * size + x] = Math.min(1, Math.max(0, v));
+        }
+      }
+      return heights;
+    }
+
+    // Render a heightmap (Float32Array) to a grayscale canvas.
+    function heightToCanvas(heights, size) {
       const c = document.createElement('canvas');
       c.width = c.height = size;
       const ctx = c.getContext('2d');
       const img = ctx.createImageData(size, size);
-      // High-contrast multi-frequency noise. No blur — we WANT grit.
-      // Mix fine-grain random with low-frequency clumps for aggregate look.
-      const lowFreq = new Float32Array(size * size);
-      // Generate a low-frequency layer (16x16 grid, interpolated)
-      const grid = 16;
-      const cells = Math.ceil(size / grid) + 1;
-      const cellVals = new Float32Array(cells * cells);
-      for (let i = 0; i < cellVals.length; i++) cellVals[i] = Math.random();
-      for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-          const fx = x / grid;
-          const fy = y / grid;
-          const ix = Math.floor(fx), iy = Math.floor(fy);
-          const tx = fx - ix, ty = fy - iy;
-          const a = cellVals[iy * cells + ix];
-          const b = cellVals[iy * cells + ix + 1];
-          const c2 = cellVals[(iy + 1) * cells + ix];
-          const d = cellVals[(iy + 1) * cells + ix + 1];
-          // Smooth interpolation (smoothstep)
-          const sx = tx * tx * (3 - 2 * tx);
-          const sy = ty * ty * (3 - 2 * ty);
-          const top = a * (1 - sx) + b * sx;
-          const bot = c2 * (1 - sx) + d * sx;
-          lowFreq[y * size + x] = top * (1 - sy) + bot * sy;
-        }
-      }
-      // Compose: 55% high-freq grit + 45% low-freq aggregate clumps + speckle pits
-      for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-          const i = (y * size + x) * 4;
-          const grit = Math.random();
-          const clump = lowFreq[y * size + x];
-          // Hard speckle: 5% chance of a dark "pit" or bright "highlight"
-          let speckle = 0;
-          const r = Math.random();
-          if (r < 0.025) speckle = -0.55;       // dark pit
-          else if (r > 0.985) speckle = 0.4;    // bright fleck
-          let v = 0.55 * grit + 0.45 * clump + speckle;
-          v = Math.min(1, Math.max(0, v));
-          // Push contrast: stretch midtones
-          v = v * v * (3 - 2 * v);
-          const px = v * 255;
-          img.data[i] = px;
-          img.data[i + 1] = px;
-          img.data[i + 2] = px;
-          img.data[i + 3] = 255;
-        }
+      for (let i = 0; i < heights.length; i++) {
+        const px = heights[i] * 255;
+        img.data[i * 4] = px;
+        img.data[i * 4 + 1] = px;
+        img.data[i * 4 + 2] = px;
+        img.data[i * 4 + 3] = 255;
       }
       ctx.putImageData(img, 0, 0);
       return c;
+    }
+
+    // Sobel-derived normal map from heightmap directly (more accurate than canvas roundtrip).
+    function heightToNormalCanvas(heights, size, strength = 1.0) {
+      const dst = document.createElement('canvas');
+      dst.width = dst.height = size;
+      const dctx = dst.getContext('2d');
+      const img = dctx.createImageData(size, size);
+      const at = (x, y) => heights[((y + size) % size) * size + ((x + size) % size)] * 255;
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          // Sobel
+          const tl = at(x - 1, y - 1), t = at(x, y - 1), tr = at(x + 1, y - 1);
+          const l = at(x - 1, y), r = at(x + 1, y);
+          const bl = at(x - 1, y + 1), b = at(x, y + 1), br = at(x + 1, y + 1);
+          const dx = ((tr + 2 * r + br) - (tl + 2 * l + bl)) * strength;
+          const dy = ((bl + 2 * b + br) - (tl + 2 * t + tr)) * strength;
+          const dz = 100;
+          const len = Math.hypot(dx, dy, dz) || 1;
+          const i = (y * size + x) * 4;
+          img.data[i]     = ((dx / len) * 0.5 + 0.5) * 255;
+          img.data[i + 1] = ((dy / len) * 0.5 + 0.5) * 255;
+          img.data[i + 2] = ((dz / len) * 0.5 + 0.5) * 255;
+          img.data[i + 3] = 255;
+        }
+      }
+      dctx.putImageData(img, 0, 0);
+      return dst;
     }
 
     function canvasToNormalMap(srcCanvas, strength = 1.0) {
@@ -261,27 +306,29 @@
       return dst;
     }
 
-    const noiseCanvas = makeNoiseCanvas(1024);
-    // Stronger bump strength (2.5) on the Sobel normal so the grit reads.
-    const normalCanvas = canvasToNormalMap(noiseCanvas, 2.5);
+    // Build the concrete heightmap + derive normal + roughness + albedo canvases
+    const TEX_SIZE = 1024;
+    const heights = makeConcreteHeightmap(TEX_SIZE);
+    const heightCanvas = heightToCanvas(heights, TEX_SIZE);
+    const normalCanvas = heightToNormalCanvas(heights, TEX_SIZE, 1.0);
 
-    // Album-like albedo subtle map: very soft second noise layer for color variation.
-    const albedoCanvas = makeNoiseCanvas(512);
-
-    const roughnessTex = new THREE.CanvasTexture(noiseCanvas);
+    const roughnessTex = new THREE.CanvasTexture(heightCanvas);
     roughnessTex.wrapS = roughnessTex.wrapT = THREE.RepeatWrapping;
-    roughnessTex.repeat.set(10, 5);
+    roughnessTex.repeat.set(6, 3);
     roughnessTex.colorSpace = THREE.NoColorSpace;
 
     const normalTex = new THREE.CanvasTexture(normalCanvas);
     normalTex.wrapS = normalTex.wrapT = THREE.RepeatWrapping;
-    normalTex.repeat.set(10, 5);
+    normalTex.repeat.set(6, 3);
     normalTex.colorSpace = THREE.NoColorSpace;
 
-    const albedoTex = new THREE.CanvasTexture(albedoCanvas);
+    // Use heightmap as a subtle albedo variation too
+    const albedoTex = new THREE.CanvasTexture(heightCanvas);
     albedoTex.wrapS = albedoTex.wrapT = THREE.RepeatWrapping;
     albedoTex.repeat.set(6, 3);
     albedoTex.colorSpace = THREE.SRGBColorSpace;
+
+    console.log('[demolate] concrete textures generated', TEX_SIZE, 'px @ 6x3 repeat');
 
     // Logo SVG embedded inline so SVGLoader can parse without an extra fetch.
     const svgString = `<?xml version="1.0" encoding="UTF-8"?>
@@ -303,18 +350,17 @@
     const logoGroup = new THREE.Group();
     logoGroup.add(innerGroup);
 
-    // Physical material — cast concrete look. PBR with procedural noise maps,
-    // env-map driven reflections (subtle, since roughness is high), no metalness.
+    // Physical material — cast concrete look.
     const material = new THREE.MeshPhysicalMaterial({
-      color: 0xebe9e3,          // off-white, slightly darker than before to make grit visible
-      map: albedoTex,            // subtle color variation
-      roughness: 0.85,           // matte
+      color: 0xc8c4ba,           // darker concrete-gray; lets the highlights and shadow detail breathe
+      map: albedoTex,
+      roughness: 0.92,
       metalness: 0.0,
       roughnessMap: roughnessTex,
       normalMap: normalTex,
-      normalScale: new THREE.Vector2(1.8, 1.8),    // strong bump — grit clearly visible
-      envMapIntensity: 0.45,     // toned down so material reads dark/contrasty
-      clearcoat: 0.0,            // no top coat, concrete has none
+      normalScale: new THREE.Vector2(2.5, 2.5),    // aggressive bump
+      envMapIntensity: 0.3,
+      clearcoat: 0.0,
     });
 
     // Extrude each path into a real 3D mesh with depth.
@@ -399,19 +445,54 @@
     composer.addPass(vignettePass);
     composer.addPass(new OutputPass());
 
-    // Scroll-driven rotation
-    const TOTAL_ROTATION = Math.PI * 4; // 2 full revolutions across the scroll
+    // Wheel + drag-driven endless rotation. Page itself doesn't scroll
+    // (overflow: hidden); we capture wheel/touch deltas and accumulate them
+    // into targetRot so the logo spins forever without any scrollbar.
     let targetRot = 0;
     let currentRot = 0;
+    const WHEEL_SENSITIVITY = 0.0035;
+    const DRAG_SENSITIVITY = 0.008;
     const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    function updateScroll() {
-      const maxScroll = document.body.scrollHeight - window.innerHeight;
-      const progress = maxScroll > 0 ? window.scrollY / maxScroll : 0;
-      targetRot = progress * TOTAL_ROTATION;
-    }
+    window.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      targetRot += e.deltaY * WHEEL_SENSITIVITY;
+    }, { passive: false });
 
-    window.addEventListener('scroll', updateScroll, { passive: true });
+    // Touch + mouse drag to rotate
+    let dragging = false;
+    let dragStartX = 0;
+    let dragStartRot = 0;
+    function startDrag(x) {
+      dragging = true;
+      dragStartX = x;
+      dragStartRot = targetRot;
+      document.body.classList.add('grabbing');
+    }
+    function moveDrag(x) {
+      if (!dragging) return;
+      targetRot = dragStartRot + (x - dragStartX) * DRAG_SENSITIVITY;
+    }
+    function endDrag() {
+      dragging = false;
+      document.body.classList.remove('grabbing');
+    }
+    window.addEventListener('mousedown', (e) => startDrag(e.clientX));
+    window.addEventListener('mousemove', (e) => moveDrag(e.clientX));
+    window.addEventListener('mouseup', endDrag);
+    window.addEventListener('mouseleave', endDrag);
+    window.addEventListener('touchstart', (e) => startDrag(e.touches[0].clientX), { passive: true });
+    window.addEventListener('touchmove', (e) => moveDrag(e.touches[0].clientX), { passive: true });
+    window.addEventListener('touchend', endDrag);
+
+    // Subtle mouse-parallax: scene tilts slightly toward cursor
+    let parallaxX = 0, parallaxY = 0;
+    let parallaxTargetX = 0, parallaxTargetY = 0;
+    window.addEventListener('mousemove', (e) => {
+      if (dragging) return;
+      parallaxTargetX = (e.clientX / window.innerWidth - 0.5) * 2;   // -1 to 1
+      parallaxTargetY = (e.clientY / window.innerHeight - 0.5) * 2;
+    }, { passive: true });
 
     function resize() {
       const w = window.innerWidth;
@@ -435,9 +516,18 @@
     updateScroll();
 
     function animate() {
-      // Smooth-follow the target rotation (light lerp so scroll feels physical)
+      // Smooth-follow rotation
       currentRot += (targetRot - currentRot) * 0.12;
       logoGroup.rotation.y = prefersReducedMotion ? 0 : currentRot;
+
+      // Mouse parallax lerp
+      parallaxX += (parallaxTargetX - parallaxX) * 0.06;
+      parallaxY += (parallaxTargetY - parallaxY) * 0.06;
+      if (!prefersReducedMotion) {
+        logoGroup.rotation.x = parallaxY * 0.12;
+        logoGroup.position.x = parallaxX * 18;
+      }
+
       composer.render();
       requestAnimationFrame(animate);
     }
