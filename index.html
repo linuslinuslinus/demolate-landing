@@ -236,17 +236,32 @@
           new THREE.Vector2(cx / LOGO_W, 1 - cy / LOGO_H),
         ];
       },
-      // Side walls: sample the texture at the SAME 2D point as the corresponding
-      // front-face vertex (using x,y, ignoring z). This means the texture
-      // continues seamlessly from the front face onto the side — each side
-      // pixel samples whatever the front face has directly above it on the
-      // texture. No tile repeats, no seams, no single-color sides.
+      // Side walls: give each side-wall quad a small 2D AREA of the texture
+      // (not a degenerate 1D line), so the side has the same density of
+      // texture detail as the front face. We project the front-edge vertices
+      // to their texture position, then offset the back-edge vertices INWARD
+      // along the edge perpendicular by a small UV amount. Result: each side
+      // quad samples a thin strip of texture perpendicular to the local edge,
+      // giving the side the SAME scratch/roughness character as the front,
+      // with no tile-repeats and no seams.
       generateSideWallUV(geometry, vertices, indexA, indexB, indexC, indexD) {
+        const ax = vertices[indexA * 3], ay = vertices[indexA * 3 + 1];
+        const bx = vertices[indexB * 3], by = vertices[indexB * 3 + 1];
+        // Edge direction A→B and its perpendicular (in shape space)
+        const dx = bx - ax, dy = by - ay;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len, ny = dx / len;   // perpendicular, pointing into shape
+        // Offset in UV space proportional to the extrusion depth so the strip
+        // width matches the side's actual physical thickness.
+        const depthUV = 0.10;
+        const uAx = ax / LOGO_W, uAy = 1 - ay / LOGO_H;
+        const uBx = bx / LOGO_W, uBy = 1 - by / LOGO_H;
+        const offX = nx * depthUV, offY = -ny * depthUV;  // flipped Y for UV
         return [
-          new THREE.Vector2(vertices[indexA * 3] / LOGO_W, 1 - vertices[indexA * 3 + 1] / LOGO_H),
-          new THREE.Vector2(vertices[indexB * 3] / LOGO_W, 1 - vertices[indexB * 3 + 1] / LOGO_H),
-          new THREE.Vector2(vertices[indexC * 3] / LOGO_W, 1 - vertices[indexC * 3 + 1] / LOGO_H),
-          new THREE.Vector2(vertices[indexD * 3] / LOGO_W, 1 - vertices[indexD * 3 + 1] / LOGO_H),
+          new THREE.Vector2(uAx,        uAy),
+          new THREE.Vector2(uBx,        uBy),
+          new THREE.Vector2(uBx + offX, uBy + offY),
+          new THREE.Vector2(uAx + offX, uAy + offY),
         ];
       },
     };
