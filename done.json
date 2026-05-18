@@ -1,0 +1,71 @@
+{
+  "task": "Rust-iron texture variations — Task #81",
+  "completed": "2026-05-18",
+  "summary": "Replaced the PolyHaven blue_metal_plate CDN-fetched textures on the Demolate Records landing page with 5 procedural canvas-2D rust-iron variations. Each variant is fully self-contained (no external image fetches), deterministically seeded, generates a colorMap + roughnessMap + aoMap at init time only (no per-frame work), and weighs in at ~37 KB total — well under the 200 KB budget. The winning variant (V4 — Layered Metal) was promoted to index.html based on objective scoring against the existing pytest aesthetic rubric.",
+  "variants": [
+    {
+      "file": "index-v1.html",
+      "name": "Pitting",
+      "description": "~420 dark radial-gradient pits scattered across a neutral mid-iron base. Pure surface-corrosion read; no rust color."
+    },
+    {
+      "file": "index-v2.html",
+      "name": "Oxidation Bloom",
+      "description": "7 dendritic rust streaks (recursive branching random walk) in warm orange-brown over a warm dark base, plus 80 fine pits. The only variant with visible rust pixels at logo scale (~0.9%)."
+    },
+    {
+      "file": "index-v3.html",
+      "name": "Directional Scratches",
+      "description": "~120 thin quadratic-bezier scratches biased toward the horizontal, with 30% having a darker highlight edge. Lighter steel base for scratch visibility."
+    },
+    {
+      "file": "index-v4.html",
+      "name": "Layered Metal (WINNER)",
+      "description": "12 worn-through irregular-polygon patches reveal a brighter substrate (~#7a8084) underneath a dark iron base. Each patch has a dark rim (AO shadow) for depth, plus 70 fine pits for surface texture."
+    },
+    {
+      "file": "index-v5.html",
+      "name": "Full Composite",
+      "description": "All three effects combined at reduced density: 180 pits + 3 rust streaks (lighter coverage) + 45 scratches. Balanced 'authentic aged iron' read."
+    }
+  ],
+  "winner": "index-v4.html",
+  "winner_name": "Layered Metal",
+  "winner_reason": "Highest objective score (passes 4/4 rubric criteria, lowest soft-distance from ideal at 0.57). Mean luminance 85 (dead-center of the dark-iron band), very low saturation (0.047), neutral hue cast (warm_cast -8). The layered substrate gives a tangible 'worn through to bare metal' read that matches the ref2-aged-metal-subtle-rust aesthetic. The depth from the rim-shadow AO map gives the surface 3D character without leaning rust-heavy. Existing pytest texture rubric PASSES.",
+  "promoted_to": "index.html",
+  "preserved_variants": ["index-v1.html", "index-v2.html", "index-v3.html", "index-v4.html", "index-v5.html"],
+  "deploy_url": "https://linuslinuslinus.github.io/demolate-landing/",
+  "variant_urls": [
+    "https://linuslinuslinus.github.io/demolate-landing/index-v1.html",
+    "https://linuslinuslinus.github.io/demolate-landing/index-v2.html",
+    "https://linuslinuslinus.github.io/demolate-landing/index-v3.html",
+    "https://linuslinuslinus.github.io/demolate-landing/index-v4.html",
+    "https://linuslinuslinus.github.io/demolate-landing/index-v5.html"
+  ],
+  "performance": {
+    "max_file_size_bytes": 37026,
+    "max_file_size_kb": 36.2,
+    "budget_kb": 200,
+    "textures_per_variant": 3,
+    "texture_resolution": "512x512",
+    "texture_gen_method": "Canvas 2D primitives (radialGradient, quadraticCurveTo, polygon fills) — runs once at page init",
+    "per_frame_texture_work": "none — textures are static CanvasTextures, no needsUpdate inside RAF loop",
+    "external_image_fetches": 0,
+    "new_dependencies": 0
+  },
+  "objective_scores": {
+    "v1": { "mean_lum": 92.0, "mean_sat": 0.043, "warm_cast": -7.7, "rust_ratio": 0.0,    "passes": 4, "soft_score": 0.745 },
+    "v2": { "mean_lum": 70.0, "mean_sat": 0.129, "warm_cast": 17.7, "rust_ratio": 0.0089, "passes": 4, "soft_score": 1.668 },
+    "v3": { "mean_lum": 120.5,"mean_sat": 0.054, "warm_cast": -12.7,"rust_ratio": 0.0,    "passes": 3, "soft_score": 1.473 },
+    "v4": { "mean_lum": 85.0, "mean_sat": 0.047, "warm_cast": -8.0, "rust_ratio": 0.0,    "passes": 4, "soft_score": 0.570 },
+    "v5": { "mean_lum": 93.5, "mean_sat": 0.027, "warm_cast": -4.7, "rust_ratio": 0.0003, "passes": 4, "soft_score": 0.780 }
+  },
+  "rubric": "Existing pytest tests/test_texture_appearance.py — mean luminance in [35,115], mean saturation <= 0.18, warm cast <= 18, rust pixel ratio <= 0.08.",
+  "notes": [
+    "All textures procedural via canvas 2D API; no external image fetches anywhere in the variants or promoted index.html.",
+    "Deterministic seeded PRNG (mulberry32) keyed by variant — each variant looks identical across reloads, so A/B screenshots are reproducible.",
+    "Custom UVGenerator, lighting, parallax, drag/wheel rotation, particles, bloom, chromatic-aberration, and M-key material presets are all preserved unchanged.",
+    "Set material.normalScale = Vector2(0,0) explicitly so the M-key tween path (which reads material.normalScale.x) doesn't crash now that there's no normal map.",
+    "Tested under playwright/chromium headless: index.html passes the existing aesthetic rubric (was previously a failing test against the rust-heavy implementation)."
+  ]
+}
