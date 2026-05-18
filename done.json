@@ -34,8 +34,9 @@
   "winner_reason": "Highest objective score (passes 4/4 rubric criteria, lowest soft-distance from ideal at 0.57). Mean luminance 85 (dead-center of the dark-iron band), very low saturation (0.047), neutral hue cast (warm_cast -8). The layered substrate gives a tangible 'worn through to bare metal' read that matches the ref2-aged-metal-subtle-rust aesthetic. The depth from the rim-shadow AO map gives the surface 3D character without leaning rust-heavy. Existing pytest texture rubric PASSES.",
   "promoted_to": "index.html",
   "preserved_variants": ["index-v1.html", "index-v2.html", "index-v3.html", "index-v4.html", "index-v5.html"],
-  "deploy_url": "https://linuslinuslinus.github.io/demolate-landing/",
-  "variant_urls": [
+  "deploy_status": "LOCAL ONLY — commit is on local main, push to origin failed because the remote repository git@github.com:linuslinuslinus/demolate-landing.git does not exist on GitHub. SSH auth as linuslinuslinus is working; the repo just needs to be created (e.g. `gh repo create linuslinuslinus/demolate-landing --public --source=. --push`). Did NOT auto-create — that's a publishing action requiring user confirmation.",
+  "deploy_url_expected_after_push": "https://linuslinuslinus.github.io/demolate-landing/",
+  "variant_urls_expected_after_push": [
     "https://linuslinuslinus.github.io/demolate-landing/index-v1.html",
     "https://linuslinuslinus.github.io/demolate-landing/index-v2.html",
     "https://linuslinuslinus.github.io/demolate-landing/index-v3.html",
