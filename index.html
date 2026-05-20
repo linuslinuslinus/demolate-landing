@@ -3,490 +3,324 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Demolate Records — Berlin techno label. Hypnotic, reduced techno for the long arc of the night. Vinyl-first. Launching June 2026.">
+  <meta name="description" content="Demolate Records">
+  <meta property="og:title" content="Demolate Records">
+  <meta property="og:description" content="DMLT001 — 05.06.2026">
+  <meta property="og:image" content="/assets/demolate-logo.svg">
   <title>Demolate Records</title>
 
-  <!-- Fonts: Archivo Black (display) + Inter (body) -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Inter:wght@400;500&display=swap" rel="stylesheet">
-
-  <!-- Tailwind CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: {
-            display: ['"Archivo Black"', 'sans-serif'],
-            body: ['Inter', 'system-ui', 'sans-serif'],
-          },
-          colors: {
-            accent: '#FF0000',
-          }
-        }
-      }
-    }
-  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&display=swap" rel="stylesheet">
 
   <style>
-    /* Design tokens */
-    :root {
-      --clr-bg: #000;
-      --clr-fg: #FFF;
-      --clr-accent: #FF0000;
-      --border: 2px solid #FFF;
-      --border-thick: 4px solid #FFF;
-      --border-accent: 4px solid #FF0000;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    /* Hard resets — no border-radius, no transitions anywhere */
-    *, *::before, *::after {
-      border-radius: 0 !important;
-      transition: none !important;
-      animation: none !important;
-    }
-
-    html { scroll-behavior: auto; }
-
-    body {
+    html, body {
+      width: 100%;
+      height: 100%;
       background: #000;
-      color: #FFF;
-      font-family: 'Inter', system-ui, sans-serif;
+      color: #fff;
+      font-family: 'Archivo Black', system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+      overscroll-behavior: none;
+      cursor: grab;
     }
+    body.grabbing { cursor: grabbing; }
+    body::-webkit-scrollbar { display: none; }
 
-    /* Logo: black SVG → white on black background */
-    .logo-img {
-      filter: invert(1);
+    canvas#stage {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
       display: block;
-      width: 100%;
-      max-width: 480px;
+      opacity: 0;
+      animation: enter 1.6s cubic-bezier(0.16, 1, 0.3, 1) 0.3s forwards;
     }
+    @keyframes enter { to { opacity: 1; } }
 
-    /* Display / manifesto heading style */
-    .font-display {
-      font-family: 'Archivo Black', sans-serif;
-      letter-spacing: -0.04em;
-    }
-
-    /* Monospace label style */
-    .label-mono {
-      font-family: 'Inter', monospace;
+    .meta {
+      position: fixed;
+      bottom: 1.5rem;
       font-size: 0.75rem;
-      letter-spacing: 0.12em;
+      letter-spacing: 0.18em;
       text-transform: uppercase;
+      color: #fff;
+      opacity: 0;
+      animation: fade-in 1.5s ease-out 1.5s forwards;
+      font-family: 'Archivo Black', monospace;
+      z-index: 10;
+    }
+    .meta--left { left: 1.5rem; }
+    .meta--right { right: 1.5rem; display: flex; gap: 1rem; }
+    .meta a { color: #fff; text-decoration: none; }
+    .meta a:hover { background: #fff; color: #000; }
+    @keyframes fade-in { to { opacity: 1; } }
+
+    @media (max-width: 640px) {
+      .meta { font-size: 0.65rem; bottom: 1rem; }
+      .meta--left { left: 1rem; }
+      .meta--right { right: 1rem; gap: 0.75rem; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html, body { cursor: default; }
     }
 
-    /* Accent text */
-    .text-accent { color: #FF0000; }
-
-    /* Borders */
-    .border-std { border: 2px solid #FFF; }
-    .border-thick { border: 4px solid #FFF; }
-    .border-accent-left { border-left: 4px solid #FF0000; }
-
-    /* CTA buttons — snap invert on hover, zero transition */
-    .btn-cta {
-      display: inline-block;
-      padding: 0.75rem 1.5rem;
-      border: 2px solid #FFF;
-      background: #000;
-      color: #FFF;
-      font-family: 'Archivo Black', sans-serif;
-      font-size: 0.75rem;
-      letter-spacing: 0.12em;
-      text-transform: uppercase;
-      text-decoration: none;
-      cursor: pointer;
-    }
-    .btn-cta:hover {
-      background: #FFF;
-      color: #000;
-    }
-    .btn-cta:focus-visible {
-      outline: 2px solid #FF0000;
-      outline-offset: 2px;
-    }
-
-    /* Artist roster tile hover */
-    .roster-tile:hover {
-      background: #FF0000;
-      color: #000;
-    }
-    .roster-tile:hover .artist-location {
-      color: #000;
-    }
-
-    /* Newsletter input */
-    .email-input {
-      background: #000;
-      color: #FFF;
-      border: 2px solid #FFF;
-      padding: 0.75rem 1rem;
-      font-family: 'Inter', system-ui, sans-serif;
-      font-size: 1rem;
-      width: 100%;
-      outline: none;
-    }
-    .email-input::placeholder { color: #666; }
-    .email-input:focus { border-color: #FF0000; }
-
-    /* Tracklist red left border */
-    .tracklist {
-      border-left: 4px solid #FF0000;
-      padding-left: 1.5rem;
-      list-style: none;
-      margin: 0;
-    }
-    .tracklist li {
-      padding: 0.5rem 0;
-      border-bottom: 1px solid #222;
-      font-family: 'Archivo Black', sans-serif;
-      letter-spacing: 0.02em;
-    }
-    .tracklist li:last-child { border-bottom: none; }
-
-    /* Section labels */
-    .section-label {
-      font-family: 'Inter', system-ui, sans-serif;
-      font-size: 0.7rem;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: #666;
-      margin-bottom: 2rem;
-    }
-
-    /* Cover placeholder */
-    .cover-placeholder {
-      aspect-ratio: 1 / 1;
-      background: #000;
-      border: 4px solid #FFF;
-      width: 100%;
-      max-width: 380px;
+    noscript .fallback-logo {
+      position: fixed;
+      inset: 0;
       display: flex;
       align-items: center;
       justify-content: center;
     }
-    .cover-placeholder span {
-      font-family: 'Archivo Black', sans-serif;
-      font-size: 2.5rem;
-      letter-spacing: -0.04em;
-      color: #333;
-    }
-
-    /* Scroll indicator */
-    .scroll-indicator {
-      font-size: 1.25rem;
-      color: #444;
-      user-select: none;
-    }
+    noscript .fallback-logo img { width: min(58vw, 58vh); }
   </style>
 </head>
-
 <body>
+  <canvas id="stage"></canvas>
 
-  <!-- ═══════════════════════════════════════
-       HERO
-  ═══════════════════════════════════════ -->
-  <section id="hero" aria-label="Hero" style="min-height: 100svh; display: grid; grid-template-rows: 1fr auto; border-bottom: var(--border-thick);">
-    <div style="display: grid; place-items: center; padding: 4rem 2rem;">
-      <div style="width: 100%; max-width: 640px; text-align: center;">
-        <!-- Logo -->
-        <div style="margin-bottom: 3rem;">
-          <img
-            src="assets/demolate-logo.svg"
-            alt="Demolate Records"
-            class="logo-img"
-            style="margin: 0 auto;"
-          >
-        </div>
+  <div class="meta meta--left">DMLT001 · 05.06.2026</div>
+  <div class="meta meta--right">
+    <a href="#" aria-label="Instagram">IG</a>
+    <a href="#" aria-label="Bandcamp">BC</a>
+    <a href="#" aria-label="SoundCloud">SC</a>
+  </div>
 
-        <!-- Release designator — prominent, accent red -->
-        <p class="label-mono text-accent" style="font-size: 1rem; letter-spacing: 0.18em; margin-bottom: 2rem;">
-          DMLT001 // 05.06.2026
-        </p>
-
-        <!-- Manifesto line -->
-        <h1 class="font-display" style="font-size: clamp(2rem, 6vw, 4.5rem); line-height: 1.0; letter-spacing: -0.04em; color: #FFF; margin-bottom: 0;">
-          Hypnotic. Reduced.<br>Vinyl-first.
-        </h1>
-      </div>
+  <noscript>
+    <div class="fallback-logo">
+      <img src="assets/demolate-logo.svg" alt="Demolate Records logo" style="width: min(58vw, 58vh); filter: invert(1);">
     </div>
+  </noscript>
 
-    <!-- Scroll indicator -->
-    <div style="padding: 1.5rem 2rem; display: flex; justify-content: flex-end; border-top: var(--border);">
-      <span class="scroll-indicator" aria-hidden="true">▼</span>
-    </div>
-  </section>
-
-
-  <!-- ═══════════════════════════════════════
-       LATEST RELEASE — DMLT001
-  ═══════════════════════════════════════ -->
-  <section id="dmlt001" aria-labelledby="release-heading" style="padding: 6rem 2rem; border-bottom: var(--border-thick);">
-    <div style="max-width: 1100px; margin: 0 auto;">
-      <p class="section-label">Latest Release</p>
-
-      <article style="display: grid; grid-template-columns: 1fr 1fr; gap: 4rem; align-items: start;">
-        <!-- Cover -->
-        <div>
-          <div class="cover-placeholder" aria-label="DMLT001 cover art placeholder">
-            <span>DMLT001</span>
-          </div>
-        </div>
-
-        <!-- Release info -->
-        <div>
-          <h2 class="font-display" id="release-heading" style="font-size: clamp(2.5rem, 5vw, 4rem); letter-spacing: -0.04em; margin-bottom: 0.5rem;">
-            DMLT001
-          </h2>
-          <p class="label-mono" style="color: #666; margin-bottom: 2.5rem;">
-            Various Artists — 05.06.2026 — 12" Vinyl
-          </p>
-
-          <!-- Tracklist -->
-          <ol class="tracklist" aria-label="Tracklist">
-            <li>DJ Dextro</li>
-            <li>Vinicius Honorio</li>
-            <li>Uväll</li>
-            <li>Alberto Tolo</li>
-            <li>Franco Rossi</li>
-            <li>A. Morgan</li>
-          </ol>
-
-          <!-- CTAs -->
-          <div style="display: flex; flex-wrap: wrap; gap: 0.75rem; margin-top: 2.5rem;">
-            <a href="#" class="btn-cta" aria-label="Preorder DMLT001 on vinyl">Preorder Vinyl</a>
-            <a href="#" class="btn-cta" aria-label="DMLT001 on Bandcamp">Bandcamp</a>
-            <a href="#" class="btn-cta" aria-label="DMLT001 on SoundCloud">SoundCloud</a>
-          </div>
-        </div>
-      </article>
-    </div>
-  </section>
-
-  <!-- Responsive override for release section -->
-  <style>
-    @media (max-width: 640px) {
-      #dmlt001 article {
-        grid-template-columns: 1fr !important;
-        gap: 2rem !important;
-      }
-      #dmlt001 .cover-placeholder {
-        max-width: 100% !important;
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
       }
     }
-  </style>
+  </script>
 
+  <script type="module">
+    import * as THREE from 'three';
+    import { SVGLoader } from 'three/addons/loaders/SVGLoader.js';
+    import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-  <!-- ═══════════════════════════════════════
-       MANIFESTO
-  ═══════════════════════════════════════ -->
-  <section id="manifesto" aria-labelledby="manifesto-heading" style="padding: 8rem 2rem; border-bottom: var(--border-thick);">
-    <div style="max-width: 900px; margin: 0 auto;">
-      <p class="section-label" id="manifesto-heading">Manifesto</p>
-      <blockquote
-        class="font-display"
-        style="
-          font-size: clamp(1.25rem, 3vw, 2rem);
-          line-height: 1.35;
-          letter-spacing: -0.02em;
-          border-left: 4px solid #FF0000;
-          padding-left: 2.5rem;
-          margin: 0;
-          max-width: 680px;
-          color: #FFF;
-        "
-      >
-        Demolate Records is a Berlin techno label launching with a singular focus: hypnotic, reduced techno for the long arc of the night. Founded 2026, vinyl-first, no compromise.
-      </blockquote>
-    </div>
-  </section>
+    const canvas = document.getElementById('stage');
+    const renderer = new THREE.WebGLRenderer({
+      canvas,
+      antialias: true,
+      alpha: false,
+    });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000000, 1);
 
+    const scene = new THREE.Scene();
 
-  <!-- ═══════════════════════════════════════
-       ARTIST ROSTER
-  ═══════════════════════════════════════ -->
-  <section id="roster" aria-labelledby="roster-heading" style="padding: 6rem 2rem; border-bottom: var(--border-thick);">
-    <div style="max-width: 1100px; margin: 0 auto;">
-      <p class="section-label" id="roster-heading">Roster</p>
-      <h2 class="font-display" style="font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -0.04em; margin-bottom: 3rem;">
-        Artists
-      </h2>
+    // PMREM-encoded environment for proper metallic reflections.
+    const pmremGenerator = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
 
-      <div style="
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 2px;
-      " role="list" aria-label="Artist roster">
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.1;
 
-        <article class="roster-tile" role="listitem" style="border: 2px solid #FFF; padding: 2rem 1.5rem; cursor: default;">
-          <h3 class="font-display" style="font-size: 1.375rem; letter-spacing: -0.02em; margin-bottom: 0.375rem;">DJ Dextro</h3>
-          <p class="artist-location label-mono" style="color: #666; margin: 0;">Berlin, DE</p>
-        </article>
+    const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 5000);
+    camera.position.set(0, 0, 1200);
 
-        <article class="roster-tile" role="listitem" style="border: 2px solid #FFF; padding: 2rem 1.5rem; cursor: default; border-left: none;">
-          <h3 class="font-display" style="font-size: 1.375rem; letter-spacing: -0.02em; margin-bottom: 0.375rem;">Vinicius Honorio</h3>
-          <p class="artist-location label-mono" style="color: #666; margin: 0;">São Paulo, BR</p>
-        </article>
+    // Lighting — KEEP THIS WORKING. Don't dial ambient below 0.4 or the surface
+    // goes black on dark background.
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    keyLight.position.set(400, 600, 800);
+    scene.add(keyLight);
+    const fillLight = new THREE.DirectionalLight(0xffffff, 0.55);
+    fillLight.position.set(-500, -300, 400);
+    scene.add(fillLight);
 
-        <article class="roster-tile" role="listitem" style="border: 2px solid #FFF; padding: 2rem 1.5rem; cursor: default; border-top: none;">
-          <h3 class="font-display" style="font-size: 1.375rem; letter-spacing: -0.02em; margin-bottom: 0.375rem;">Uväll</h3>
-          <p class="artist-location label-mono" style="color: #666; margin: 0;">Stockholm, SE</p>
-        </article>
+    // -- Real PBR textures from PolyHaven (CC0 license) --
+    // Procedural noise can't match the photographic feel of real PBR texture
+    // sets. PolyHaven serves CC0 maps via Cloudflare CDN with CORS open, so we
+    // can load them directly from the browser.
+    //
+    // Picked set: rusty_metal_sheet (bluish-gray painted steel, scratched,
+    // rust streaks, muted metallic sheen). Closest visual match to ref2.
+    const PH_BASE = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rusty_metal_sheet';
+    const PH_SLUG = 'rusty_metal_sheet';
 
-        <article class="roster-tile" role="listitem" style="border: 2px solid #FFF; padding: 2rem 1.5rem; cursor: default; border-top: none; border-left: none;">
-          <h3 class="font-display" style="font-size: 1.375rem; letter-spacing: -0.02em; margin-bottom: 0.375rem;">Alberto Tolo</h3>
-          <p class="artist-location label-mono" style="color: #666; margin: 0;">Barcelona, ES</p>
-        </article>
+    const texLoader = new THREE.TextureLoader();
+    texLoader.crossOrigin = 'anonymous';
 
-        <article class="roster-tile" role="listitem" style="border: 2px solid #FFF; padding: 2rem 1.5rem; cursor: default; border-top: none;">
-          <h3 class="font-display" style="font-size: 1.375rem; letter-spacing: -0.02em; margin-bottom: 0.375rem;">Franco Rossi</h3>
-          <p class="artist-location label-mono" style="color: #666; margin: 0;">Milan, IT</p>
-        </article>
-
-        <article class="roster-tile" role="listitem" style="border: 2px solid #FFF; padding: 2rem 1.5rem; cursor: default; border-top: none; border-left: none;">
-          <h3 class="font-display" style="font-size: 1.375rem; letter-spacing: -0.02em; margin-bottom: 0.375rem;">A. Morgan</h3>
-          <p class="artist-location label-mono" style="color: #666; margin: 0;">London, GB</p>
-        </article>
-
-      </div>
-    </div>
-  </section>
-
-  <!-- Responsive override: 3 cols on desktop -->
-  <style>
-    @media (min-width: 768px) {
-      #roster > div > div[role="list"] {
-        grid-template-columns: repeat(3, 1fr) !important;
-      }
-      /* Fix borders for 3-col layout */
-      #roster article:nth-child(2) { border-left: none !important; }
-      #roster article:nth-child(3) { border-left: none !important; }
-      #roster article:nth-child(4) { border-top: none !important; border-left: 2px solid #FFF !important; }
-      #roster article:nth-child(5) { border-top: none !important; border-left: none !important; }
-      #roster article:nth-child(6) { border-top: none !important; border-left: none !important; }
+    function loadPhTex(map, colorSpace) {
+      const tex = texLoader.load(`${PH_BASE}/${PH_SLUG}_${map}_1k.jpg`);
+      tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+      tex.colorSpace = colorSpace;
+      return tex;
     }
-    @media (max-width: 767px) {
-      /* 2-col mobile border fix */
-      #roster article:nth-child(odd) { border-left: 2px solid #FFF !important; }
-      #roster article:nth-child(3),
-      #roster article:nth-child(4),
-      #roster article:nth-child(5),
-      #roster article:nth-child(6) { border-top: none !important; }
-      #roster article:nth-child(even) { border-left: none !important; }
+
+    const colorTex = loadPhTex('diff', THREE.SRGBColorSpace);
+    const normalTex = loadPhTex('nor_gl', THREE.NoColorSpace);
+    const roughnessTex = loadPhTex('rough', THREE.NoColorSpace);
+    const aoTex = loadPhTex('ao', THREE.NoColorSpace);
+
+    // ExtrudeGeometry UVs are in shape coords (~0..1003, not normalized).
+    // 1.0 tile across the logo width hides texture seams behind the edges.
+    const TILES = 1.0;
+    const REPEAT_X = TILES / 1003;
+    const REPEAT_Y = TILES / 1003;  // square sampling (PBR maps are square)
+    [colorTex, normalTex, roughnessTex, aoTex].forEach(t => {
+      t.repeat.set(REPEAT_X, REPEAT_Y);
+    });
+
+    // Aged painted steel material. metalness/roughness inherent to the
+    // texture set; we multiply both by 1.0 so the maps drive the values.
+    const material = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      map: colorTex,
+      metalness: 1.0,
+      roughness: 1.0,
+      roughnessMap: roughnessTex,
+      normalMap: normalTex,
+      normalScale: new THREE.Vector2(0.7, 0.7),
+      aoMap: aoTex,
+      aoMapIntensity: 1.0,
+      envMapIntensity: 1.0,
+    });
+
+    const innerGroup = new THREE.Group();
+    const logoGroup = new THREE.Group();
+    logoGroup.add(innerGroup);
+
+    const loader = new SVGLoader();
+    const data = loader.parse(`<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1003.09 470.89">
+<path d="m459.39,47.59C432.21,19.64,394.56,1.93,352.73.76c-2.86-.05-5.78.58-8.4,1.75L11.79,150.46c-7.13,3.2-11.79,10.34-11.79,18.2v134.37c0,7.81,4.66,14.94,11.79,18.14l332.54,147.96c2.62,1.21,5.54,1.84,8.4,1.75,83.61-2.33,150.62-70.8,150.62-154.95v-160.18c0-42.07-16.74-80.26-43.96-108.16Zm-111.03,210.31c0,32.07-25.96,58.03-58.03,58.03h-115.45c-10.96,0-19.84-8.92-19.84-19.89v-120.44c0-10.97,8.88-19.85,19.84-19.85h116.71c31.34,0,56.77,25.38,56.77,56.73v45.42Z"/>
+<path d="m998.85,328.79l-311.97,138.79c-3.69,1.65-7.67,2.52-11.75,2.52h-6.69c-78.52,0-142.18-63.67-142.18-142.18v-176.54C526.26,70.1,590.21,3.82,670.57.03c4.47-.19,8.98.63,13.06,2.43l314.88,138.73c7.08,3.11,4.85,13.69-2.91,13.69h-272.04c-23.34,0-42.26,18.92-42.26,42.31v75.6c0,23.35,18.92,42.27,42.26,42.27h272.38c7.71,0,9.94,10.58,2.91,13.73Z"/>
+</svg>`);
+
+    // Softer bevel — bigger size + more segments creates a chamfered edge that
+    // catches light like a real machined part instead of a CGI box.
+    const extrudeSettings = {
+      depth: 110,
+      bevelEnabled: true,
+      bevelSegments: 6,
+      bevelSize: 5,
+      bevelThickness: 5,
+      curveSegments: 28,
+    };
+
+    data.paths.forEach((path) => {
+      SVGLoader.createShapes(path).forEach((shape) => {
+        const geometry = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+        geometry.computeVertexNormals();
+        innerGroup.add(new THREE.Mesh(geometry, material));
+      });
+    });
+
+    innerGroup.rotation.x = Math.PI;
+    logoGroup.updateMatrixWorld(true);
+    const bbox = new THREE.Box3().setFromObject(logoGroup);
+    const center = new THREE.Vector3();
+    bbox.getCenter(center);
+    innerGroup.position.sub(center);
+    scene.add(logoGroup);
+
+    console.log('[demolate] paths:', data.paths.length, 'meshes:', innerGroup.children.length);
+
+    // Post-processing
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.1,   // strength — minimal
+      0.6,   // radius
+      0.92   // threshold — only brightest highlights
+    );
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());
+
+    // Wheel + drag-driven endless rotation (no scrolling)
+    let targetRot = 0;
+    let currentRot = 0;
+    const WHEEL_SENSITIVITY = 0.003;
+    const DRAG_SENSITIVITY = 0.008;
+    const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+    window.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      targetRot += e.deltaY * WHEEL_SENSITIVITY;
+    }, { passive: false });
+
+    let dragging = false;
+    let dragStartX = 0;
+    let dragStartRot = 0;
+    function startDrag(x) {
+      dragging = true;
+      dragStartX = x;
+      dragStartRot = targetRot;
+      document.body.classList.add('grabbing');
     }
-  </style>
-
-
-  <!-- ═══════════════════════════════════════
-       NEWSLETTER
-  ═══════════════════════════════════════ -->
-  <section id="newsletter" aria-labelledby="newsletter-heading" style="padding: 6rem 2rem; border-bottom: var(--border-thick);">
-    <div style="max-width: 600px; margin: 0 auto;">
-      <p class="section-label" id="newsletter-heading">Mailing List</p>
-      <h2 class="font-display" style="font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -0.04em; margin-bottom: 3rem;">
-        Stay Informed
-      </h2>
-
-      <form action="#" method="post" novalidate>
-        <div style="display: flex; gap: 0; flex-direction: column;">
-          <label for="email-input" class="label-mono" style="color: #666; margin-bottom: 0.75rem;">
-            Email Address
-          </label>
-          <div style="display: flex; flex-wrap: wrap; gap: 0;">
-            <input
-              id="email-input"
-              class="email-input"
-              type="email"
-              name="email"
-              placeholder="YOUR EMAIL"
-              required
-              aria-label="Email address for mailing list"
-              style="flex: 1; min-width: 200px;"
-            >
-            <button
-              type="submit"
-              class="btn-cta"
-              aria-label="Subscribe to Demolate Records mailing list"
-              style="white-space: nowrap; border-left: none;"
-            >
-              Subscribe
-            </button>
-          </div>
-        </div>
-        <p class="label-mono" style="color: #444; margin-top: 1rem;">
-          No spam. Release info only.
-        </p>
-      </form>
-    </div>
-  </section>
-
-  <!-- Mobile: button below input -->
-  <style>
-    @media (max-width: 480px) {
-      #newsletter form > div > div {
-        flex-direction: column !important;
-      }
-      #newsletter form button {
-        border-left: 2px solid #FFF !important;
-        border-top: none !important;
-      }
+    function moveDrag(x) {
+      if (!dragging) return;
+      targetRot = dragStartRot + (x - dragStartX) * DRAG_SENSITIVITY;
     }
-  </style>
+    function endDrag() {
+      dragging = false;
+      document.body.classList.remove('grabbing');
+    }
+    canvas.addEventListener('mousedown', (e) => startDrag(e.clientX));
+    window.addEventListener('mousemove', (e) => moveDrag(e.clientX));
+    window.addEventListener('mouseup', endDrag);
+    canvas.addEventListener('touchstart', (e) => startDrag(e.touches[0].clientX), { passive: true });
+    window.addEventListener('touchmove', (e) => moveDrag(e.touches[0].clientX), { passive: true });
+    window.addEventListener('touchend', endDrag);
 
+    // Mouse parallax (subtle scene tilt)
+    let parallaxX = 0, parallaxY = 0;
+    let parallaxTargetX = 0, parallaxTargetY = 0;
+    window.addEventListener('mousemove', (e) => {
+      if (dragging) return;
+      parallaxTargetX = (e.clientX / window.innerWidth - 0.5) * 2;
+      parallaxTargetY = (e.clientY / window.innerHeight - 0.5) * 2;
+    }, { passive: true });
 
-  <!-- ═══════════════════════════════════════
-       FOOTER
-  ═══════════════════════════════════════ -->
-  <footer style="border-top: var(--border-thick); padding: 3rem 2rem;">
-    <div style="max-width: 1100px; margin: 0 auto; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-end; gap: 2rem;">
+    function resize() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      renderer.setSize(w, h, false);
+      composer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      const fovRad = camera.fov * Math.PI / 180;
+      const visibleHeight = 2 * Math.tan(fovRad / 2) * camera.position.z;
+      const visibleWidth = visibleHeight * camera.aspect;
+      const target = Math.min(visibleWidth, visibleHeight) * 0.58;
+      const bboxSize = bbox.getSize(new THREE.Vector3());
+      const scale = Math.min(target / bboxSize.x, target / bboxSize.y);
+      logoGroup.scale.setScalar(scale);
+    }
+    window.addEventListener('resize', resize, { passive: true });
+    resize();
 
-      <!-- Socials + Impressum -->
-      <nav aria-label="Footer navigation">
-        <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 2rem;">
-          <li>
-            <a
-              href="#"
-              class="label-mono"
-              style="color: #FFF; text-decoration: none;"
-              aria-label="Demolate Records on Instagram"
-            >Instagram</a>
-          </li>
-          <li>
-            <a
-              href="#"
-              class="label-mono"
-              style="color: #FFF; text-decoration: none;"
-              aria-label="Demolate Records on Bandcamp"
-            >Bandcamp</a>
-          </li>
-          <li>
-            <a
-              href="#"
-              class="label-mono"
-              style="color: #FFF; text-decoration: none;"
-              aria-label="Demolate Records on SoundCloud"
-            >SoundCloud</a>
-          </li>
-          <li>
-            <a
-              href="#"
-              class="label-mono"
-              style="color: #666; text-decoration: none;"
-              aria-label="Impressum"
-            >Impressum</a>
-          </li>
-        </ul>
-      </nav>
+    function animate() {
+      currentRot += (targetRot - currentRot) * 0.12;
+      logoGroup.rotation.y = prefersReducedMotion ? 0 : currentRot;
 
-      <!-- Copyright -->
-      <small class="label-mono" style="color: #444; font-size: 0.7rem;">
-        © 2026 Demolate Records — Berlin, DE
-      </small>
-    </div>
-  </footer>
+      parallaxX += (parallaxTargetX - parallaxX) * 0.05;
+      parallaxY += (parallaxTargetY - parallaxY) * 0.05;
+      if (!prefersReducedMotion) {
+        logoGroup.rotation.x = parallaxY * 0.1;
+      }
 
+      composer.render();
+      requestAnimationFrame(animate);
+    }
+    animate();
+  </script>
 </body>
 </html>
