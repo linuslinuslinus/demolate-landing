@@ -6,7 +6,14 @@
   <meta name="description" content="Demolate Records">
   <meta property="og:title" content="Demolate Records">
   <meta property="og:description" content="DMLT001 — 05.06.2026">
-  <meta property="og:image" content="/assets/demolate-logo.svg">
+  <meta property="og:image" content="/assets/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" type="image/svg+xml" href="/assets/demolate-logo.svg">
+  <link rel="icon" type="image/png" sizes="32x32" href="/assets/favicon-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="/assets/favicon-64.png">
+  <link rel="apple-touch-icon" sizes="256x256" href="/assets/favicon-256.png">
   <title>Demolate Records</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -83,9 +90,9 @@
 
   <div class="meta meta--left">DMLT001 · 05.06.2026</div>
   <div class="meta meta--right">
-    <a href="#" aria-label="Instagram">IG</a>
-    <a href="#" aria-label="Bandcamp">BC</a>
-    <a href="#" aria-label="SoundCloud">SC</a>
+    <a href="https://www.instagram.com/demolate.records/" target="_blank" rel="noopener" aria-label="Instagram">IG</a>
+    <a href="https://demolaterecords.bandcamp.com/" target="_blank" rel="noopener" aria-label="Bandcamp">BC</a>
+    <a href="https://soundcloud.com/demolate_records" target="_blank" rel="noopener" aria-label="SoundCloud">SC</a>
   </div>
 
   <noscript>
@@ -111,6 +118,7 @@
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
     import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
     const canvas = document.getElementById('stage');
     const renderer = new THREE.WebGLRenderer({
@@ -144,14 +152,12 @@
     scene.add(fillLight);
 
     // -- Real PBR textures from PolyHaven (CC0 license) --
-    // Procedural noise can't match the photographic feel of real PBR texture
-    // sets. PolyHaven serves CC0 maps via Cloudflare CDN with CORS open, so we
-    // can load them directly from the browser.
-    //
-    // Picked set: rusty_metal_sheet (bluish-gray painted steel, scratched,
-    // rust streaks, muted metallic sheen). Closest visual match to ref2.
-    const PH_BASE = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/rusty_metal_sheet';
-    const PH_SLUG = 'rusty_metal_sheet';
+    // We use blue_metal_plate's SURFACE maps (normal, roughness, AO) for the
+    // scuffed/scratched character without rust, then DROP its diffuse map and
+    // tint the material with a neutral steel gray. Result: clean aged metal
+    // with surface character, no rust, no blue.
+    const PH_BASE = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/blue_metal_plate';
+    const PH_SLUG = 'blue_metal_plate';
 
     const texLoader = new THREE.TextureLoader();
     texLoader.crossOrigin = 'anonymous';
@@ -163,37 +169,46 @@
       return tex;
     }
 
-    const colorTex = loadPhTex('diff', THREE.SRGBColorSpace);
     const normalTex = loadPhTex('nor_gl', THREE.NoColorSpace);
     const roughnessTex = loadPhTex('rough', THREE.NoColorSpace);
     const aoTex = loadPhTex('ao', THREE.NoColorSpace);
+    // intentionally NO diffuse — we want flat gray, not painted blue
 
-    // ExtrudeGeometry UVs are in shape coords (~0..1003, not normalized).
-    // 1.0 tile across the logo width hides texture seams behind the edges.
-    const TILES = 1.0;
-    const REPEAT_X = TILES / 1003;
-    const REPEAT_Y = TILES / 1003;  // square sampling (PBR maps are square)
-    [colorTex, normalTex, roughnessTex, aoTex].forEach(t => {
-      t.repeat.set(REPEAT_X, REPEAT_Y);
+    // Custom UVGenerator (defined below) makes the front+back faces use
+    // NORMALIZED UVs (0..1) instead of shape coords. So texture.repeat = 1.0
+    // gives exactly one tile across the logo. Side walls get a single-point
+    // UV — they sample one texture pixel, appearing as solid color (no more
+    // visible repeat-grid bands on the extrusion sides).
+    [normalTex, roughnessTex, aoTex].forEach(t => {
+      t.repeat.set(1, 1);
+      t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
     });
 
-    // Aged painted steel material. metalness/roughness inherent to the
-    // texture set; we multiply both by 1.0 so the maps drive the values.
+    // Clean aged steel — flat gray with the texture's scratch/scuff character.
+    // alphaMap + alphaTest are used by the crack animation to literally cut
+    // pixels out of the logo (so the logo appears to split apart in 3D).
     const material = new THREE.MeshPhysicalMaterial({
-      color: 0xffffff,
-      map: colorTex,
-      metalness: 1.0,
+      color: 0x9aa0a4,
+      metalness: 0.95,
       roughness: 1.0,
       roughnessMap: roughnessTex,
       normalMap: normalTex,
-      normalScale: new THREE.Vector2(0.7, 0.7),
+      normalScale: new THREE.Vector2(0.6, 0.6),
       aoMap: aoTex,
-      aoMapIntensity: 1.0,
-      envMapIntensity: 1.0,
+      aoMapIntensity: 0.9,
+      envMapIntensity: 1.2,
     });
 
+    // Three-level group hierarchy:
+    //   parallaxGroup → handles mouse-parallax tilt (rotation.x + rotation.y)
+    //     └── logoGroup → handles scroll-driven spin (rotation.y)
+    //           └── innerGroup → SVG Y-flip + meshes
+    // This separation lets us apply parallax-Y rotation (left-right tilt)
+    // WITHOUT clashing with the spin's rotation.y.
     const innerGroup = new THREE.Group();
     const logoGroup = new THREE.Group();
+    const parallaxGroup = new THREE.Group();
+    parallaxGroup.add(logoGroup);
     logoGroup.add(innerGroup);
 
     const loader = new SVGLoader();
@@ -203,15 +218,67 @@
 <path d="m998.85,328.79l-311.97,138.79c-3.69,1.65-7.67,2.52-11.75,2.52h-6.69c-78.52,0-142.18-63.67-142.18-142.18v-176.54C526.26,70.1,590.21,3.82,670.57.03c4.47-.19,8.98.63,13.06,2.43l314.88,138.73c7.08,3.11,4.85,13.69-2.91,13.69h-272.04c-23.34,0-42.26,18.92-42.26,42.31v75.6c0,23.35,18.92,42.27,42.26,42.27h272.38c7.71,0,9.94,10.58,2.91,13.73Z"/>
 </svg>`);
 
-    // Softer bevel — bigger size + more segments creates a chamfered edge that
-    // catches light like a real machined part instead of a CGI box.
+    // Custom UV generator:
+    //  - Front + back faces: normalize UVs to 0..1 over the logo bbox (1003×471)
+    //    so texture.repeat = 1 means "one tile across the whole logo"
+    //  - Side walls: single point UV (0.5, 0.5) — samples one texture pixel,
+    //    appearing as solid color, no more visible tile-repeat grid on edges
+    const LOGO_W = 1003.09, LOGO_H = 470.89;
+    const customUVGenerator = {
+      // Front + back: normalized 0..1 across the logo bbox.
+      generateTopUV(geometry, vertices, indexA, indexB, indexC) {
+        const ax = vertices[indexA * 3], ay = vertices[indexA * 3 + 1];
+        const bx = vertices[indexB * 3], by = vertices[indexB * 3 + 1];
+        const cx = vertices[indexC * 3], cy = vertices[indexC * 3 + 1];
+        return [
+          new THREE.Vector2(ax / LOGO_W, 1 - ay / LOGO_H),
+          new THREE.Vector2(bx / LOGO_W, 1 - by / LOGO_H),
+          new THREE.Vector2(cx / LOGO_W, 1 - cy / LOGO_H),
+        ];
+      },
+      // Side walls: give each side-wall quad a small 2D AREA of the texture
+      // (not a degenerate 1D line), so the side has the same density of
+      // texture detail as the front face. We project the front-edge vertices
+      // to their texture position, then offset the back-edge vertices INWARD
+      // along the edge perpendicular by a small UV amount. Result: each side
+      // quad samples a thin strip of texture perpendicular to the local edge,
+      // giving the side the SAME scratch/roughness character as the front,
+      // with no tile-repeats and no seams.
+      generateSideWallUV(geometry, vertices, indexA, indexB, indexC, indexD) {
+        const ax = vertices[indexA * 3], ay = vertices[indexA * 3 + 1];
+        const bx = vertices[indexB * 3], by = vertices[indexB * 3 + 1];
+        // Edge direction A→B and its perpendicular (in shape space)
+        const dx = bx - ax, dy = by - ay;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len, ny = dx / len;   // perpendicular, pointing into shape
+        // Offset in UV space proportional to the extrusion depth so the strip
+        // width matches the side's actual physical thickness.
+        const depthUV = 0.10;
+        const uAx = ax / LOGO_W, uAy = 1 - ay / LOGO_H;
+        const uBx = bx / LOGO_W, uBy = 1 - by / LOGO_H;
+        const offX = nx * depthUV, offY = -ny * depthUV;  // flipped Y for UV
+        return [
+          new THREE.Vector2(uAx,        uAy),
+          new THREE.Vector2(uBx,        uBy),
+          new THREE.Vector2(uBx + offX, uBy + offY),
+          new THREE.Vector2(uAx + offX, uAy + offY),
+        ];
+      },
+    };
+
+    // Softer bevel + many curve segments. With only 28 curveSegments the
+    // logo's circular shapes (D bowl, C bowl, the curve at the bottom) were
+    // polygonal — and even with vertex-normal averaging, polygon edges
+    // produce subtle shading bands visible along the side walls. Bumping
+    // to 96 segments makes the curves read as truly smooth.
     const extrudeSettings = {
       depth: 110,
       bevelEnabled: true,
-      bevelSegments: 6,
+      bevelSegments: 10,
       bevelSize: 5,
       bevelThickness: 5,
-      curveSegments: 28,
+      curveSegments: 96,
+      UVGenerator: customUVGenerator,
     };
 
     data.paths.forEach((path) => {
@@ -228,9 +295,181 @@
     const center = new THREE.Vector3();
     bbox.getCenter(center);
     innerGroup.position.sub(center);
-    scene.add(logoGroup);
+    scene.add(parallaxGroup);
 
     console.log('[demolate] paths:', data.paths.length, 'meshes:', innerGroup.children.length);
+
+    // -- Material switcher (M key cycles materials) --
+    // Three preset looks: aged steel (default), polished silver, copper/bronze.
+    // Smooth tween between them over ~0.6s when M is pressed.
+    const MATERIAL_PRESETS = [
+      { name: 'aged-steel',    color: 0x9aa0a4, metalness: 0.95, roughness: 1.0,  normalScale: 0.6, envMapIntensity: 1.2 },
+      { name: 'polished',      color: 0xd2d5d8, metalness: 1.0,  roughness: 0.55, normalScale: 0.3, envMapIntensity: 1.8 },
+      { name: 'copper-bronze', color: 0xb47238, metalness: 1.0,  roughness: 0.85, normalScale: 0.7, envMapIntensity: 1.4 },
+      { name: 'black-metal',   color: 0x383a3c, metalness: 1.0,  roughness: 0.6,  normalScale: 0.55, envMapIntensity: 1.1 },
+    ];
+    let presetIdx = 0;
+    let tweenT0 = 0, tweenDur = 600;
+    let tweenFrom = null, tweenTo = null;
+
+    function cyclePreset() {
+      presetIdx = (presetIdx + 1) % MATERIAL_PRESETS.length;
+      tweenFrom = {
+        color: material.color.clone(),
+        metalness: material.metalness,
+        roughness: material.roughness,
+        normalScaleX: material.normalScale.x,
+        envMapIntensity: material.envMapIntensity,
+      };
+      const next = MATERIAL_PRESETS[presetIdx];
+      tweenTo = {
+        color: new THREE.Color(next.color),
+        metalness: next.metalness,
+        roughness: next.roughness,
+        normalScaleX: next.normalScale,
+        envMapIntensity: next.envMapIntensity,
+      };
+      tweenT0 = performance.now();
+    }
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'm' || e.key === 'M') cyclePreset();
+    });
+
+    /* CRACK ANIMATION REMOVED. Code preserved as comments for future revival.
+    // Approach: use a procedurally drawn jagged crack canvas as the LOGO
+    // material's alphaMap, animating alphaTest from 0 → ~0.45 → 0 over the
+    // cycle. When alphaTest rises, pixels darker than the threshold get
+    // discarded from the logo — actual holes in the geometry. The crack
+    // shape is in shape-bbox coords (matches our custom UVGenerator), so
+    // it appears correctly placed on the logo. Side walls sample a single
+    // pixel (always solid white in the canvas) so they stay intact.
+    const CRACK_TEX_W = 1024;
+    const CRACK_TEX_H = 512;
+
+    function generateCrackCanvas() {
+      const c = document.createElement('canvas');
+      c.width = CRACK_TEX_W;
+      c.height = CRACK_TEX_H;
+      const ctx = c.getContext('2d');
+      // WHITE background = solid logo
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, CRACK_TEX_W, CRACK_TEX_H);
+
+      ctx.lineCap = 'butt';        // hard ends, not rounded — looks more like stone
+      ctx.lineJoin = 'miter';
+      ctx.miterLimit = 1.5;
+
+      // Angular crack — many short straight segments at sharp angles.
+      // (Midpoint displacement gave SMOOTH wavy lines that read like a
+      // paper tear; stone cracks turn sharply, not in arcs.)
+      function drawAngularCrack(x0, y0, dirAngle, totalLen, startWidth) {
+        let cx = x0, cy = y0;
+        let curAngle = dirAngle;
+        let remaining = totalLen;
+        let width = startWidth;
+        ctx.strokeStyle = '#000';
+        while (remaining > 4) {
+          const segLen = 6 + Math.random() * 22;
+          curAngle += (Math.random() - 0.5) * 0.9;  // SHARP angle change
+          const nx = cx + Math.cos(curAngle) * segLen;
+          const ny = cy + Math.sin(curAngle) * segLen;
+          ctx.lineWidth = Math.max(1, width * (0.7 + Math.random() * 0.6)); // vary thickness
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(nx, ny);
+          ctx.stroke();
+          cx = nx; cy = ny;
+          remaining -= segLen;
+          width *= 0.985;  // taper toward the end
+        }
+        return [cx, cy];   // return endpoint for branches
+      }
+
+      // Spawn 6-10 cracks scattered across the canvas (NOT one big edge-to-edge).
+      const CRACK_COUNT = 6 + Math.floor(Math.random() * 5);
+      // Bias away from exact center (0.5, 0.5) so side walls stay solid
+      function safePoint() {
+        let x, y;
+        do {
+          x = 60 + Math.random() * (CRACK_TEX_W - 120);
+          y = 30 + Math.random() * (CRACK_TEX_H - 60);
+        } while (Math.abs(x - CRACK_TEX_W/2) < 80 && Math.abs(y - CRACK_TEX_H/2) < 40);
+        return [x, y];
+      }
+
+      for (let i = 0; i < CRACK_COUNT; i++) {
+        const [sx, sy] = safePoint();
+        const angle = Math.random() * Math.PI * 2;
+        const len = 60 + Math.random() * 180;
+        const width = 2 + Math.random() * 3;
+        const [ex, ey] = drawAngularCrack(sx, sy, angle, len, width);
+
+        // Y-branch at the endpoint with ~50% chance
+        if (Math.random() < 0.5) {
+          const ba = angle + (Math.random() < 0.5 ? 0.6 : -0.6) + (Math.random() - 0.5) * 0.4;
+          drawAngularCrack(ex, ey, ba, len * (0.4 + Math.random() * 0.4), width * 0.7);
+        }
+      }
+
+      // Add a few small "spall" fragments — tiny dots/blobs scattered around
+      // larger cracks that look like little pieces flaking off.
+      ctx.fillStyle = '#000';
+      for (let i = 0; i < 30; i++) {
+        const [x, y] = safePoint();
+        const r = 0.6 + Math.random() * 1.8;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      return c;
+    }
+
+    // Pre-build one CanvasTexture we'll mutate each cycle.
+    const crackCanvas = generateCrackCanvas();
+    const crackTexture = new THREE.CanvasTexture(crackCanvas);
+    crackTexture.wrapS = crackTexture.wrapT = THREE.ClampToEdgeWrapping;
+    crackTexture.flipY = false;   // our UVGenerator does 1-y flip on the front face already
+
+    let crackState = 'idle';
+    let crackT0 = 0;
+    let nextCrackAt = performance.now() + 6000 + Math.random() * 4000;
+
+    function setCrackActive(active) {
+      // no-op (crack disabled)
+    }
+    */
+    // crack disabled — no-op for animate loop:
+    let crackState = 'disabled';
+
+    // -- Ambient particles (atmospheric drift) --
+    // 80 tiny white dots drifting slowly in the scene. Adds atmosphere
+    // without competing with the logo for attention.
+    const PARTICLE_COUNT = 80;
+    const particleGeo = new THREE.BufferGeometry();
+    const positions = new Float32Array(PARTICLE_COUNT * 3);
+    const velocities = new Float32Array(PARTICLE_COUNT * 3);
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      // Spread across a volume in front of and behind the logo
+      positions[i * 3]     = (Math.random() - 0.5) * 1600;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * 900;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * 400 - 100;
+      // Very slow random velocity
+      velocities[i * 3]     = (Math.random() - 0.5) * 0.25;
+      velocities[i * 3 + 1] = (Math.random() - 0.5) * 0.25;
+      velocities[i * 3 + 2] = (Math.random() - 0.5) * 0.10;
+    }
+    particleGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const particleMat = new THREE.PointsMaterial({
+      color: 0xffffff,
+      size: 2.5,
+      transparent: true,
+      opacity: 0.35,
+      sizeAttenuation: true,
+      depthWrite: false,
+    });
+    const particles = new THREE.Points(particleGeo, particleMat);
+    scene.add(particles);
 
     // Post-processing
     const composer = new EffectComposer(renderer);
@@ -242,6 +481,39 @@
       0.92   // threshold — only brightest highlights
     );
     composer.addPass(bloomPass);
+
+    // Chromatic aberration pass — intensity scales with rotation velocity.
+    // R sampled with +offset, B with -offset, G centered. Subtle at rest,
+    // visible during fast spin.
+    const caPass = new ShaderPass({
+      uniforms: {
+        tDiffuse: { value: null },
+        amount: { value: 0.0 },  // updated each frame from rotation velocity
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float amount;
+        varying vec2 vUv;
+        void main() {
+          // Direction radially outward from center (subtle)
+          vec2 dir = (vUv - 0.5) * amount;
+          float r = texture2D(tDiffuse, vUv + dir).r;
+          float g = texture2D(tDiffuse, vUv).g;
+          float b = texture2D(tDiffuse, vUv - dir).b;
+          float a = texture2D(tDiffuse, vUv).a;
+          gl_FragColor = vec4(r, g, b, a);
+        }
+      `,
+    });
+    composer.addPass(caPass);
+
     composer.addPass(new OutputPass());
 
     // Wheel + drag-driven endless rotation (no scrolling)
@@ -259,17 +531,35 @@
     let dragging = false;
     let dragStartX = 0;
     let dragStartRot = 0;
+    let dragMoved = false;            // track if pointer actually moved during drag
     function startDrag(x) {
       dragging = true;
+      dragMoved = false;
       dragStartX = x;
       dragStartRot = targetRot;
       document.body.classList.add('grabbing');
     }
     function moveDrag(x) {
       if (!dragging) return;
+      if (Math.abs(x - dragStartX) > 5) dragMoved = true;
       targetRot = dragStartRot + (x - dragStartX) * DRAG_SENSITIVITY;
     }
     function endDrag() {
+      // If we never moved more than 5px, treat as a CLICK → fast 720° auto-spin
+      if (dragging && !dragMoved) {
+        const start = targetRot;
+        const end = targetRot + Math.PI * 4;
+        const t0 = performance.now();
+        const dur = 1200;
+        function spin() {
+          const t = (performance.now() - t0) / dur;
+          if (t >= 1) { targetRot = end; return; }
+          const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+          targetRot = start + (end - start) * eased;
+          requestAnimationFrame(spin);
+        }
+        requestAnimationFrame(spin);
+      }
       dragging = false;
       document.body.classList.remove('grabbing');
     }
@@ -307,14 +597,64 @@
     window.addEventListener('resize', resize, { passive: true });
     resize();
 
+    let prevRot = 0;
     function animate() {
+      const prev = currentRot;
       currentRot += (targetRot - currentRot) * 0.12;
       logoGroup.rotation.y = prefersReducedMotion ? 0 : currentRot;
+
+      // Chromatic aberration intensity proportional to rotation velocity
+      const rotVel = Math.abs(currentRot - prev);
+      // Map velocity 0..0.2 rad/frame → CA amount 0..0.015
+      const caAmount = Math.min(0.015, rotVel * 0.075);
+      caPass.uniforms.amount.value = caAmount;
+
+      // Material tween (M-key cycling)
+      if (tweenTo && tweenFrom) {
+        const t = Math.min(1, (performance.now() - tweenT0) / tweenDur);
+        const k = t * t * (3 - 2 * t);  // smoothstep
+        material.color.r = tweenFrom.color.r + (tweenTo.color.r - tweenFrom.color.r) * k;
+        material.color.g = tweenFrom.color.g + (tweenTo.color.g - tweenFrom.color.g) * k;
+        material.color.b = tweenFrom.color.b + (tweenTo.color.b - tweenFrom.color.b) * k;
+        material.metalness = tweenFrom.metalness + (tweenTo.metalness - tweenFrom.metalness) * k;
+        material.roughness = tweenFrom.roughness + (tweenTo.roughness - tweenFrom.roughness) * k;
+        material.normalScale.set(
+          tweenFrom.normalScaleX + (tweenTo.normalScaleX - tweenFrom.normalScaleX) * k,
+          tweenFrom.normalScaleX + (tweenTo.normalScaleX - tweenFrom.normalScaleX) * k
+        );
+        material.envMapIntensity = tweenFrom.envMapIntensity + (tweenTo.envMapIntensity - tweenFrom.envMapIntensity) * k;
+        if (t >= 1) { tweenFrom = null; tweenTo = null; }
+      }
+
+      // Crack animation removed.
 
       parallaxX += (parallaxTargetX - parallaxX) * 0.05;
       parallaxY += (parallaxTargetY - parallaxY) * 0.05;
       if (!prefersReducedMotion) {
-        logoGroup.rotation.x = parallaxY * 0.1;
+        // Apply parallax to the OUTER parallaxGroup so it doesn't conflict
+        // with the spin's rotation.y on logoGroup.
+        parallaxGroup.rotation.x = parallaxY * 0.12;   // mouse up/down → logo tilts up/down
+        parallaxGroup.rotation.y = parallaxX * 0.18;   // mouse left/right → logo tilts left/right
+      }
+
+      // Drift particles. Wrap them around when they leave the visible volume.
+      if (!prefersReducedMotion) {
+        const pos = particleGeo.attributes.position.array;
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+          pos[i * 3]     += velocities[i * 3];
+          pos[i * 3 + 1] += velocities[i * 3 + 1];
+          pos[i * 3 + 2] += velocities[i * 3 + 2];
+          // Wrap on X
+          if (pos[i * 3] > 800) pos[i * 3] = -800;
+          else if (pos[i * 3] < -800) pos[i * 3] = 800;
+          // Wrap on Y
+          if (pos[i * 3 + 1] > 450) pos[i * 3 + 1] = -450;
+          else if (pos[i * 3 + 1] < -450) pos[i * 3 + 1] = 450;
+          // Wrap on Z
+          if (pos[i * 3 + 2] > 200) pos[i * 3 + 2] = -300;
+          else if (pos[i * 3 + 2] < -300) pos[i * 3 + 2] = 200;
+        }
+        particleGeo.attributes.position.needsUpdate = true;
       }
 
       composer.render();
